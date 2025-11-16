@@ -1,6 +1,6 @@
 #include <iostream>
 
-#include "pdnsol/utils/id_string.hpp"
+#include "pdnsol/common.hpp"
 #include "pdnsol/utils/logging.hpp"
 
 using namespace pdnsol;

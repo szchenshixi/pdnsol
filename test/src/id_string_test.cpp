@@ -1,8 +1,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-#include "pdnsol/utils/id_string.hpp"
-#include "pdnsol/utils/logging.hpp"
+#include "pdnsol/common.hpp"
 
 using namespace pdnsol;
 

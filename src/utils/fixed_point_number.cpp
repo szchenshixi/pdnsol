@@ -1,7 +1,8 @@
+#include "fixed_point_number.hpp"
+
 #include <cmath>  // std::llround
 #include <limits> // std::numeric_limits
 
-#include "fixed_point_number.hpp"
 #include "logging.hpp"
 
 namespace FPN {

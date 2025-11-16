@@ -1,69 +1,59 @@
 #pragma once
 #include <optional>
-#include <unordered_set>
 
-#include "pdnsol/utils/fixed_point_number.hpp"
-#include "pdnsol/utils/id_string.hpp"
+#include "pdnsol/common.hpp"
 
 namespace pdnsol {
-struct Node;
-using NodeMap = std::unordered_map<IdString, Node, IdString::Hash>;
-using Tick = FPN::Rep;
-
 // -------------------------------
 // Domain model
 // -------------------------------
 struct Node {
     IdString mName;
-    Tick mX; // meters
-    Tick mY; // meters
-    IdString mNet;
-    IdString mLayer;
+    int32_t mNet; // Layer-(VDD/VSS) combination
+    Tick mX;      // meters
+    Tick mY;      // meters
 };
 
 struct MetalRes {
-    IdString mId;
+    IdString mName;
+    int32_t mNet; // Layer-(VDD/VSS) combination
     IdString mN1; // Node_1
     IdString mN2; // Node_2
-    double mR = 0.0;
-    IdString mLayer;
-    IdString mNet;
+    ScalarType mR = 0.0;
 };
 
 struct ViaRes {
-    IdString mId;
+    IdString mName;
     IdString mN1;
     IdString mN2;
-    double mR = 0.0;
-    IdString mFromNet;
-    IdString mToNet;
+    ScalarType mR = 0.0;
 };
 
 struct PkgRes {
-    IdString mId;
+    IdString mName;
     IdString mN1;
     IdString mN2;
-    double mR = 0.0; // Resistance, Ohm
+    ScalarType mR = 0.0; // Resistance, Ohm
 };
 
 struct Vsrc {
-    IdString mId;
-    IdString mNPlus;
-    IdString mNMinus;
-    double mV = 0.0;
+    IdString mName;
+    IdString mFromNode;
+    IdString mToNode;
     // subtypes: "global", "via", "package", "other"
     enum Type { GLOBAL, VIA, PACKAGE, OTHER };
     Type mType = OTHER;
+    ScalarType mV = 0.0;
 };
 
 struct Isrc {
-    IdString mId;
-    IdString mNPlus;
-    IdString mNMinus;
-    double mI = 0.0; // Current, Amp
+    IdString mName;
+    IdString mFromNode;
+    IdString mToNode;
     // subtypes: "iB", "other"
     enum Type { IB, OTHER };
     Type mType = OTHER;
+    ScalarType mI = 0.0; // Current, Amp
 };
 
 struct SectionMeta {
@@ -85,14 +75,13 @@ struct CircuitGraph {
     std::vector<Vsrc> mVsrcs;
     std::vector<Isrc> mIsrcs;
     std::vector<SectionMeta> mSections;
-    std::unordered_map<IdString, IdString, IdString::Hash> mMetadata;
+    IdStringMap mMetadata;
 
     // Return all nodes (const access)
     const NodeMap& allNodes() const;
 
     // Ensure a node exists, similar to getOrCreate
-    Node& ensureNode(const IdString& name, IdString net = IdString(),
-                     IdString layer = IdString(),
+    Node& ensureNode(const IdString& name, int32_t net = -1,
                      std::optional<double> x = std::nullopt,
                      std::optional<double> y = std::nullopt);
 

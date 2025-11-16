@@ -1,3 +1,5 @@
+#include "pdnsol/utils/logging.hpp"
+
 #include <cstdarg>
 
 #include <plog/Appenders/ColorConsoleAppender.h>
@@ -6,8 +8,6 @@
 #include <plog/Init.h>
 #include <plog/Log.h>
 #include <plog/Record.h>
-
-#include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
 

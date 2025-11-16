@@ -1,19 +1,19 @@
-#include <stdexcept>
-
 #include "pdnsol/struct/circuit.hpp"
 
-namespace pdnsol {
+#include <stdexcept>
+#include <unordered_set>
 
+namespace pdnsol {
 const NodeMap& CircuitGraph::allNodes() const { return mNodes; }
 
-Node& CircuitGraph::ensureNode(const IdString& name, IdString net,
-                               IdString layer, std::optional<double> x,
+Node& CircuitGraph::ensureNode(const IdString& name, int net,
+                               std::optional<double> x,
                                std::optional<double> y) {
-    if (name == "0") {
+    if (name == "GND") {
         auto it = mNodes.find(name);
         if (it == mNodes.end()) {
             Node groundNode;
-            groundNode.mName = IdString("0");
+            groundNode.mName = IdString("GND");
             it = mNodes.emplace(name, std::move(groundNode)).first;
         }
         return it->second;
@@ -23,7 +23,6 @@ Node& CircuitGraph::ensureNode(const IdString& name, IdString net,
     if (it != mNodes.end()) {
         Node& node = it->second;
         if (net && !node.mNet) node.mNet = net;
-        if (layer && !node.mLayer) node.mLayer = layer;
         if (x && !node.mX) node.mX = *x;
         if (y && !node.mY) node.mY = *y;
         return node;
@@ -32,7 +31,6 @@ Node& CircuitGraph::ensureNode(const IdString& name, IdString net,
     Node newNode;
     newNode.mName = name;
     newNode.mNet = net;
-    newNode.mLayer = layer;
     newNode.mX = x ? *x : -1;
     newNode.mY = y ? *y : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
@@ -67,21 +65,21 @@ void CircuitGraph::ensureAllReferencedNodesExist() {
         addName(res.mN2);
     }
     for (const auto& src : mVsrcs) {
-        addName(src.mNPlus);
-        addName(src.mNMinus);
+        addName(src.mFromNode);
+        addName(src.mToNode);
     }
     for (const auto& src : mIsrcs) {
-        addName(src.mNPlus);
-        addName(src.mNMinus);
+        addName(src.mFromNode);
+        addName(src.mToNode);
     }
     // Always ensure ground marker exists if referenced by any element
-    if (names.count(IdString("0")) == 0) {
-        if (refersToGround()) { ensureNode(IdString("0")); }
+    if (names.count(IdString("GND")) == 0) {
+        if (refersToGround()) { ensureNode(IdString("GND")); }
     }
 }
 
 bool CircuitGraph::refersToGround() const {
-    auto ref0 = [](const IdString& s) { return s == "0"; };
+    auto ref0 = [](const IdString& s) { return s == "GND"; };
     for (const auto& res : mMetalResistors)
         if (ref0(res.mN1) || ref0(res.mN2)) return true;
     for (const auto& res : mViaResistors)
@@ -89,9 +87,9 @@ bool CircuitGraph::refersToGround() const {
     for (const auto& res : mPkgResistors)
         if (ref0(res.mN1) || ref0(res.mN2)) return true;
     for (const auto& src : mVsrcs)
-        if (ref0(src.mNPlus) || ref0(src.mNMinus)) return true;
+        if (ref0(src.mFromNode) || ref0(src.mToNode)) return true;
     for (const auto& src : mIsrcs)
-        if (ref0(src.mNPlus) || ref0(src.mNMinus)) return true;
+        if (ref0(src.mFromNode) || ref0(src.mToNode)) return true;
     return false;
 }
 
@@ -111,10 +109,10 @@ void CircuitGraph::validateReadyForMna() const {
     };
 
     for (const auto& res : mMetalResistors)
-        checkR(res.mId, res.mR);
+        checkR(res.mName, res.mR);
     for (const auto& res : mViaResistors)
-        checkR(res.mId, res.mR);
+        checkR(res.mName, res.mR);
     for (const auto& res : mPkgResistors)
-        checkR(res.mId, res.mR);
+        checkR(res.mName, res.mR);
 }
 } // namespace pdnsol

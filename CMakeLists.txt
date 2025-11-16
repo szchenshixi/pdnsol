@@ -27,8 +27,15 @@ include(cmake/find-3rdparty.cmake)
 
 # ---- Declare library ----
 
-add_library(PdnSol_lib OBJECT src/utils/logging.cpp src/utils/id_string.cpp
-                              src/struct/circuit.cpp src/solver/mna.cpp)
+add_library(
+  PdnSol_lib OBJECT
+  src/utils/logging.cpp
+  src/utils/id_string.cpp
+  src/io/parser_utils.cpp
+  src/io/parser_spice.cpp
+  src/io/parser_spef.cpp
+  src/struct/circuit.cpp
+  src/solver/mna.cpp)
 
 target_include_directories(PdnSol_lib PUBLIC ${PROJECT_SOURCE_DIR}/include
                                              ${PROJECT_BINARY_DIR})
