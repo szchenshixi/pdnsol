@@ -1,6 +1,5 @@
-#include <iostream>
-
-#include "pdnsol/common.hpp"
+#include "pdnsol/io/parser_spef.hpp"
+#include "pdnsol/solver/solver_basic.hpp"
 #include "pdnsol/utils/logging.hpp"
 
 using namespace pdnsol;
@@ -16,9 +15,15 @@ void init() {
 
 int main() {
     init();
-    IdString i("aa");
-    IdString ii("bb");
-    PDN_INFO("%s", i.c_str());
-    PDN_INFO("%s", ii.c_str());
+    CircuitGraph circuit =
+      parseSpefFile("./test/data/datc-rdf-calibrations-master/calibration/"
+                    "sky130hd/aes_cipher_top/aes_cipher_top_1.spef");
+    MNASystem mna = assembleMNA(circuit);
+    MNASolution sol = solveMNA(mna);
+
+    // IdString i("i");
+    // IdString ii("ii");
+    // PDN_INFO("%s", i.c_str());
+    // PDN_INFO("%s", ii.c_str());
     return 0;
 }

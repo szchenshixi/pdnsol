@@ -28,7 +28,7 @@ Indices buildIndices(const CircuitGraph& circ) {
     return Indices{std::move(nodeIndex), std::move(vsrcIndex)};
 }
 
-MNASystem assembleMna(CircuitGraph& circ) {
+MNASystem assembleMNA(CircuitGraph& circ) {
     circ.ensureAllReferencedNodesExist();
     circ.validateReadyForMna();
 

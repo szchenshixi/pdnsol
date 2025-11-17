@@ -22,15 +22,13 @@ namespace pdnsol {
  *
  * Throws std::runtime_error on parse failures.
  */
-void augmentCircuitGraphWithDef(std::istream& defIn, CircuitGraph& circ,
-                                bool propagateInternalNodes = true);
+void augmentCircuitGraphWithDef(std::istream& defIn, CircuitGraph& circ);
 
 /**
  * Convenience wrapper that opens the file and calls
  * augmentCircuitGraphWithDef.
  */
 void augmentCircuitGraphWithDefFile(const std::string& path,
-                                    CircuitGraph& circ,
-                                    bool propagateInternalNodes = true);
+                                    CircuitGraph& circ);
 
 } // namespace pdnsol

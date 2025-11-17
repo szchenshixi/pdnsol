@@ -335,105 +335,6 @@ void applyAnchorsFromDef(const DefDesign& def, CircuitGraph& circ) {
     }
 }
 
-// -------------------------
-// Approximate positions for internal nodes
-// -------------------------
-
-// Build adjacency from resistors (metal and via).
-std::unordered_map<IdString, std::vector<IdString>, IdString::Hash>
-buildAdjacency(const CircuitGraph& circ) {
-    std::unordered_map<IdString, std::vector<IdString>, IdString::Hash> adj;
-
-    auto addEdge = [&adj](const IdString& a, const IdString& b) {
-        adj[a].push_back(b);
-        adj[b].push_back(a);
-    };
-
-    for (const auto& r : circ.mMetalResistors) {
-        addEdge(r.mN1, r.mN2);
-    }
-    for (const auto& r : circ.mViaResistors) {
-        addEdge(r.mN1, r.mN2);
-    }
-    for (const auto& r : circ.mPkgResistors) {
-        addEdge(r.mN1, r.mN2);
-    }
-    return adj;
-}
-
-// Simple heuristic: iteratively assign unknown-node positions to
-// the average of any neighbors that already have coordinates.
-//
-// This does NOT use explicit DEF routing (no polylines / layers).
-// It uses only the electrical topology and the anchors you got from DEF.
-// It is a "graph smoothing" / barycentric interpolation, which is
-// relatively cheap and often good enough for visualization.
-//
-// For a more accurate approximation, I shall replace this by a routine
-// that walks over DEF ROUTED polylines and distributes intermediate
-// nodes along those paths according to resistance ratios.
-void propagateApproxInternalPositions(CircuitGraph& circ) {
-    auto adj = buildAdjacency(circ);
-
-    // Track which nodes have "known" coordinates.
-    std::unordered_map<IdString, bool, IdString::Hash> hasCoord;
-    hasCoord.reserve(circ.mNodes.size());
-
-    auto isValid = [](Tick v) { return v >= 0; };
-
-    for (const auto& kv : circ.mNodes) {
-        const IdString& id = kv.first;
-        const Node& node = kv.second;
-        bool known = isValid(node.mX) && isValid(node.mY);
-        hasCoord[id] = known;
-    }
-
-    bool changed = true;
-    const int maxIter = 50; // keep it modest
-    int iter = 0;
-
-    while (changed && iter < maxIter) {
-        changed = false;
-        ++iter;
-
-        for (auto& kv : circ.mNodes) {
-            const IdString& id = kv.first;
-            Node& node = kv.second;
-
-            if (hasCoord[id]) continue; // already known
-
-            auto itAdj = adj.find(id);
-            if (itAdj == adj.end()) continue;
-
-            Tick sumX = 0.0;
-            Tick sumY = 0.0;
-            int count = 0;
-
-            for (const auto& nbId : itAdj->second) {
-                auto itHC = hasCoord.find(nbId);
-                if (itHC != hasCoord.end() && itHC->second) {
-                    const Node& nbNode = circ.mNodes.at(nbId);
-                    if (isValid(nbNode.mX) && isValid(nbNode.mY)) {
-                        sumX += nbNode.mX;
-                        sumY += nbNode.mY;
-                        ++count;
-                    }
-                }
-            }
-
-            if (count > 0) {
-                node.mX = std::llround((double)sumX / count);
-                node.mY = std::llround((double)sumY / count);
-                hasCoord[id] = true;
-                changed = true;
-            }
-        }
-    }
-
-    // Any remaining nodes without coordinates after maxIter
-    // will remain at whatever default they had (e.g., 0,0).
-}
-
 } // anonymous namespace
 
 namespace pdnsol {
@@ -442,17 +343,12 @@ namespace pdnsol {
 // Public API
 // -------------------------
 
-void augmentCircuitGraphWithDef(std::istream& defIn, CircuitGraph& circ,
-                                bool propagateInternalNodes) {
+void augmentCircuitGraphWithDef(std::istream& defIn, CircuitGraph& circ) {
     DefDesign def = parseDef(defIn);
 
-    // 1) Set coordinates for nodes that can be directly anchored
-    //    by PINS or COMPONENTS.
+    // Set coordinates for nodes that can be directly anchored by PINS or
+    // COMPONENTS.
     applyAnchorsFromDef(def, circ);
-
-    // 2) Optionally propagate positions to internal nodes
-    //    using graph smoothing.
-    if (propagateInternalNodes) { propagateApproxInternalPositions(circ); }
 }
 
 void augmentCircuitGraphWithDefFile(const std::string& path,
@@ -460,7 +356,6 @@ void augmentCircuitGraphWithDefFile(const std::string& path,
                                     bool propagateInternalNodes) {
     std::ifstream ifs(path);
     if (!ifs) { throw std::runtime_error("Failed to open DEF file: " + path); }
-    augmentCircuitGraphWithDef(ifs, circ, propagateInternalNodes);
 }
 
 } // namespace pdnsol

@@ -36,7 +36,8 @@ add_library(
   src/io/parser_spice.cpp
   src/io/parser_spef.cpp
   src/struct/circuit.cpp
-  src/solver/mna.cpp)
+  src/solver/mna.cpp
+  src/solver/solver_basic.cpp)
 
 target_include_directories(PdnSol_lib PUBLIC ${PROJECT_SOURCE_DIR}/include
                                              ${PROJECT_BINARY_DIR})

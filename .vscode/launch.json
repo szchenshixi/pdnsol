@@ -5,13 +5,29 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File with Arguments",
-            "type": "debugpy",
-            "cwd": "${workspaceFolder}/script",
+            "name": "(gdb) Launch",
+            "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/script/header_manager.py",
-            "console": "integratedTerminal",
-            "args": ".."
+            "program": "${workspaceFolder}/build/PdnSol",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "externalConsole": false,
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty-printing for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                },
+                {
+                    "description": "Set Disassembly Flavor to Intel",
+                    "text": "-gdb-set disassembly-flavor intel",
+                    "ignoreFailures": true
+                }
+            ]
         }
+        
     ]
 }

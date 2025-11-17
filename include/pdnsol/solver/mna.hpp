@@ -9,7 +9,7 @@
 namespace pdnsol {
 
 // -------------------------------
-// MNA system and solution
+// Modified Nodal Analysis (MNA) system
 // -------------------------------
 
 struct MNASystem {
@@ -39,10 +39,10 @@ struct Indices {
 Indices buildIndices(const CircuitGraph& circ);
 
 // -------------------------------
-// Assembly (stamping) and solve
+// Assembly (stamping) for solve
 // -------------------------------
 
-MNASystem assembleMna(CircuitGraph& circ);
+MNASystem assembleMNA(CircuitGraph& circ);
 
 } // namespace pdnsol
 
