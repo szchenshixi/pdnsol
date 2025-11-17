@@ -31,6 +31,7 @@ add_library(
   PdnSol_lib OBJECT
   src/utils/logging.cpp
   src/utils/id_string.cpp
+  src/io/parser_def.cpp
   src/io/parser_utils.cpp
   src/io/parser_spice.cpp
   src/io/parser_spef.cpp
