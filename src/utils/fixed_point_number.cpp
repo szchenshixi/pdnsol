@@ -1,15 +1,15 @@
-#include "fixed_point_number.hpp"
+#include "pdnsol/utils/fixed_point_number.hpp"
 
 #include <cmath>  // std::llround
 #include <limits> // std::numeric_limits
 
-#include "logging.hpp"
+#include "pdnsol/utils/logging.hpp"
 
-namespace FPN {
+namespace pdnsol::FPN {
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // Internal state
-// -----------------------------------------------------------------------------
+// -------------------------
 
 namespace {
 
@@ -69,7 +69,7 @@ uint32_t getScale() {
         // Lazy initialization path. In a single-threaded program this is safe.
         // In multi-threaded code, this would need synchronization.
         if (setScaleIfUninitialized(kDefaultScale)) {
-            SS_INFO(
+            PDN_INFO(
               "Fixed-Point number lazily initialized with scaling factor %u",
               kDefaultScale);
         }
@@ -79,34 +79,34 @@ uint32_t getScale() {
 
 } // namespace
 
-// -----------------------------------------------------------------------------
+// -------------------------
 // Public API
-// -----------------------------------------------------------------------------
+// -------------------------
 
 void initFixedPointNumberScale(uint32_t scale) {
     if (scale == 0U) {
-        SS_ERROR(
+        PDN_ERROR(
           "Fixed-Point scale must be greater than 0; requested scale = 0");
         return;
     }
 
     if (g_scale == kScaleUninitialized) {
         g_scale = scale;
-        SS_INFO("Fixed-Point number initialized with scaling factor %u",
-                scale);
+        PDN_INFO("Fixed-Point number initialized with scaling factor %u",
+                 scale);
         return;
     }
 
     // Scale is already initialized at this point.
     if (g_scale == scale) {
         // Idempotent re-initialization: allow silently or with a debug log.
-        SS_INFO(
+        PDN_INFO(
           "Fixed-Point scale already initialized to %u; repeated call ignored",
           scale);
     } else {
         // Conflicting initialization: log an error and keep the original
         // value.
-        SS_ERROR(
+        PDN_ERROR(
           "Fixed-Point scale already initialized to %u; ignoring new value %u",
           g_scale,
           scale);
@@ -135,7 +135,7 @@ Rep toRep(double value) {
       static_cast<double>(std::numeric_limits<Rep>::min());
 
     if (scaled > maxRepAsDouble || scaled < minRepAsDouble) {
-        SS_ERROR(
+        PDN_ERROR(
           "Fixed-Point conversion overflow: value=%f, scale=%u, scaled=%f "
           "(Rep range [%f, %f])",
           value,
@@ -158,4 +158,4 @@ Rep toRep(double value) {
     return static_cast<Rep>(rounded);
 }
 
-} // namespace FPN
+} // namespace pdnsol::FPN

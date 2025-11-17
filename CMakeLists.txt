@@ -31,10 +31,12 @@ add_library(
   PdnSol_lib OBJECT
   src/utils/logging.cpp
   src/utils/id_string.cpp
+  src/utils/fixed_point_number.cpp
   src/io/parser_def.cpp
   src/io/parser_utils.cpp
   src/io/parser_spice.cpp
   src/io/parser_spef.cpp
+  src/viz/heatmap.cpp
   src/struct/circuit.cpp
   src/solver/mna.cpp
   src/solver/solver_basic.cpp)

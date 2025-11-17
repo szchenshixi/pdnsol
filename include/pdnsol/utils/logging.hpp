@@ -3,7 +3,6 @@
 #include <string>
 
 namespace pdnsol {
-
 // User API
 #define PDN_DEBUG(...)       \
     Logger::instance().log( \

@@ -17,7 +17,7 @@
  * in this process. The scale is configured via initFixedPointNumberScale().
  */
 
-namespace FPN {
+namespace pdnsol::FPN {
 
 /// Underlying integer type used to store fixed-point representations.
 using Rep = std::int64_t;
@@ -70,5 +70,5 @@ void initFixedPointNumberScale(std::uint32_t scale);
  */
 [[nodiscard]] Rep toRep(double value);
 
-} // namespace FPN
+} // namespace pdnsol::FPN
 #endif // FIXED_POINT_NUMBER_HPP_
