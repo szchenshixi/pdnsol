@@ -1,6 +1,5 @@
 #include "pdnsol/utils/id_string.hpp"
 
-namespace pdnsol {
 IdString::Pool& IdString::pool() {
     static Pool p;
     return p;
@@ -30,4 +29,3 @@ const std::string& IdString::resolveGlobal(uint32_t id) {
     if (id == kInvalid || id >= p.mPool.size()) { return getInvalidStr(); }
     return p.mPool[id];
 }
-} // namespace hdl

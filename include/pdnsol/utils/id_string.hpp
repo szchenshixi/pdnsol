@@ -9,8 +9,6 @@
 #include <unordered_map>
 #include <vector>
 
-namespace pdnsol {
-
 class IdString {
   public:
     struct NoInternTag {
@@ -134,4 +132,3 @@ class IdString {
 
     static Pool& pool();
 };
-} // namespace pdnsol

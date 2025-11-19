@@ -43,6 +43,8 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
         const Node& node = kv.second;
 
         if (skipGndNode && name == "GND") { continue; }
+        // The node has no geometry information
+        if (node.mXMicros < 0 || node.mYMicros < 0) { continue; }
 
         double x = FPN::fromRep(node.mXMicros);
         double y = FPN::fromRep(node.mYMicros);
