@@ -98,7 +98,7 @@ struct ParsedNode {
 //   gnd / GND      -> ground
 //   n<net>_x_y     -> PDN node with net-index and coordinates
 //   anything else  -> arbitrary node (package, etc.)
-ParsedNode parseNodeName(const std::string& raw, double coordToMeterScale) {
+ParsedNode parseNodeName(const std::string& raw, int32_t coordToMircoScale) {
     ParsedNode out;
 
     // Ground mapping
@@ -119,8 +119,8 @@ ParsedNode parseNodeName(const std::string& raw, double coordToMeterScale) {
                 double x = std::stod(parts[1]);
                 double y = std::stod(parts[2]);
                 out.netIndex = net;
-                out.xMeters = x * coordToMeterScale;
-                out.yMeters = y * coordToMeterScale;
+                out.xMeters = x * coordToMircoScale;
+                out.yMeters = y * coordToMircoScale;
             } catch (...) {
                 // If parsing fails, leave netIndex/x/y as defaults.
             }
@@ -258,7 +258,7 @@ void parseCommentMeta(
 // -------------------------
 
 void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
-                   const ParseState& st, double coordToMeterScale) {
+                   const ParseState& st, int32_t coordToMircoScale) {
     if (tokens.size() < 4) {
         throw std::runtime_error("Resistor line has fewer than 4 tokens: '" +
                                  (tokens.empty() ? std::string{} : tokens[0]) +
@@ -272,8 +272,8 @@ void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
 
     double R = parseSpiceNumber(val);
 
-    ParsedNode pn1 = parseNodeName(n1Str, coordToMeterScale);
-    ParsedNode pn2 = parseNodeName(n2Str, coordToMeterScale);
+    ParsedNode pn1 = parseNodeName(n1Str, coordToMircoScale);
+    ParsedNode pn2 = parseNodeName(n2Str, coordToMircoScale);
 
     circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
     circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
@@ -321,7 +321,7 @@ void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
 
 void parseVoltageSource(const std::vector<std::string>& tokens,
                         CircuitGraph& circ, const ParseState& st,
-                        double coordToMeterScale, bool& seenGlobalVsrc) {
+                        int32_t coordToMircoScale, bool& seenGlobalVsrc) {
     if (tokens.size() < 4) {
         throw std::runtime_error(
           "Voltage source line has fewer than 4 tokens: '" +
@@ -335,8 +335,8 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
 
     double V = parseSpiceNumber(val);
 
-    ParsedNode pn1 = parseNodeName(n1Str, coordToMeterScale);
-    ParsedNode pn2 = parseNodeName(n2Str, coordToMeterScale);
+    ParsedNode pn1 = parseNodeName(n1Str, coordToMircoScale);
+    ParsedNode pn2 = parseNodeName(n2Str, coordToMircoScale);
 
     circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
     circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
@@ -372,7 +372,7 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
 }
 
 void parseCurrentSource(const std::vector<std::string>& tokens,
-                        CircuitGraph& circ, double coordToMeterScale) {
+                        CircuitGraph& circ, int32_t coordToMircoScale) {
     if (tokens.size() < 4) {
         throw std::runtime_error(
           "Current source line has fewer than 4 tokens: '" +
@@ -386,8 +386,8 @@ void parseCurrentSource(const std::vector<std::string>& tokens,
 
     double I = parseSpiceNumber(val);
 
-    ParsedNode pn1 = parseNodeName(n1Str, coordToMeterScale);
-    ParsedNode pn2 = parseNodeName(n2Str, coordToMeterScale);
+    ParsedNode pn1 = parseNodeName(n1Str, coordToMircoScale);
+    ParsedNode pn2 = parseNodeName(n2Str, coordToMircoScale);
 
     circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
     circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
@@ -419,8 +419,8 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
     CircuitGraph circ;
     circ.mCoordinateUnit = coordUnit;
 
-    const double coordToMeterScale =
-      (coordUnit == CircuitGraph::UM) ? 1e-6 : 1e-3;
+    const int32_t coordToMircoScale =
+      (coordUnit == CircuitGraph::UM) ? 1 : 1000;
 
     ParseState st;
     bool seenGlobalVsrc = false;
@@ -460,14 +460,14 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
         try {
             switch (elemType) {
             case 'R':
-                parseResistor(tokens, circ, st, coordToMeterScale);
+                parseResistor(tokens, circ, st, coordToMircoScale);
                 break;
             case 'V':
                 parseVoltageSource(
-                  tokens, circ, st, coordToMeterScale, seenGlobalVsrc);
+                  tokens, circ, st, coordToMircoScale, seenGlobalVsrc);
                 break;
             case 'I':
-                parseCurrentSource(tokens, circ, coordToMeterScale);
+                parseCurrentSource(tokens, circ, coordToMircoScale);
                 break;
             default:
                 // Unknown / unsupported element; silently ignore or log

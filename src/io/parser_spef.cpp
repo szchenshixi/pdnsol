@@ -130,7 +130,7 @@ void recordNetSection(CircuitGraph& circ, const SpefState& st) {
 // Create MetalRes from SPEF *RES line.
 void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
                          const std::vector<std::string>& tokens,
-                         double coordToMeterScale) {
+                         int32_t coordToMircoScale) {
     // Format: <idx> <node1> <node2> <R>
     if (tokens.size() < 4) {
         throw std::runtime_error("SPEF *RES entry has fewer than 4 tokens");
@@ -153,22 +153,22 @@ void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
           "': " + e.what());
     }
 
-    ParsedNode pn1 = parsePdNodeName(n1Name, coordToMeterScale);
-    ParsedNode pn2 = parsePdNodeName(n2Name, coordToMeterScale);
+    ParsedNode pn1 = parsePdNodeName(n1Name, coordToMircoScale);
+    ParsedNode pn2 = parsePdNodeName(n2Name, coordToMircoScale);
 
-    circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
-    circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
+    circ.ensureNode(pn1.mId, pn1.mNet, pn1.mXMicros, pn1.mYMicros);
+    circ.ensureNode(pn2.mId, pn2.mNet, pn2.mXMicros, pn2.mYMicros);
 
     MetalRes res;
     // Unique-ish name: R_<net>_<idx>
     std::string rName = "R_" + st.currentNetName + "_" + idxStr;
     res.mName = IdString(rName);
-    res.mN1 = pn1.id;
-    res.mN2 = pn2.id;
+    res.mN1 = pn1.mId;
+    res.mN2 = pn2.mId;
 
     int32_t netIndex = -1;
-    if (pn1.netIndex >= 0) netIndex = pn1.netIndex;
-    else if (pn2.netIndex >= 0) netIndex = pn2.netIndex;
+    if (pn1.mNet >= 0) netIndex = pn1.mNet;
+    else if (pn2.mNet >= 0) netIndex = pn2.mNet;
     res.mNet = netIndex;
 
     res.mR = rVal;
@@ -179,7 +179,7 @@ void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
 // For CAP entries: only ensure nodes exist; ignore capacitance numeric for DC.
 void ensureNodesFromCap(CircuitGraph& circ, const SpefState& st,
                         const std::vector<std::string>& tokens,
-                        double coordToMeterScale) {
+                        int32_t coordToMircoScale) {
     // Ground cap:   <idx> <node> <C>
     // Coupling cap: <idx> <node1> <node2> <C>
     if (tokens.size() < 3) { return; }
@@ -188,8 +188,8 @@ void ensureNodesFromCap(CircuitGraph& circ, const SpefState& st,
         // <idx> <node> <C>
         std::string nodeTok = tokens[1];
         std::string nodeName = resolveSpefName(nodeTok, st.nameMap);
-        ParsedNode pn = parsePdNodeName(nodeName, coordToMeterScale);
-        circ.ensureNode(pn.id, pn.netIndex, pn.xMeters, pn.yMeters);
+        ParsedNode pn = parsePdNodeName(nodeName, coordToMircoScale);
+        circ.ensureNode(pn.mId, pn.mNet, pn.mXMicros, pn.mYMicros);
     } else if (tokens.size() >= 4) {
         // <idx> <node1> <node2> <C>
         std::string n1Tok = tokens[1];
@@ -198,11 +198,11 @@ void ensureNodesFromCap(CircuitGraph& circ, const SpefState& st,
         std::string n1Name = resolveSpefName(n1Tok, st.nameMap);
         std::string n2Name = resolveSpefName(n2Tok, st.nameMap);
 
-        ParsedNode pn1 = parsePdNodeName(n1Name, coordToMeterScale);
-        ParsedNode pn2 = parsePdNodeName(n2Name, coordToMeterScale);
+        ParsedNode pn1 = parsePdNodeName(n1Name, coordToMircoScale);
+        ParsedNode pn2 = parsePdNodeName(n2Name, coordToMircoScale);
 
-        circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
-        circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
+        circ.ensureNode(pn1.mId, pn1.mNet, pn1.mXMicros, pn1.mYMicros);
+        circ.ensureNode(pn2.mId, pn2.mNet, pn2.mXMicros, pn2.mYMicros);
     }
 }
 
@@ -234,7 +234,7 @@ void handleNameMapEntry(SpefState& st, const std::string& line) {
 // Handle *CONN line: we only ensure nodes exist.
 void handleConnLine(CircuitGraph& circ, const SpefState& st,
                     const std::vector<std::string>& tokens,
-                    double coordToMeterScale) {
+                    int32_t coordToMircoScale) {
     // Formats (simplified):
     // *P <node> <dir> ...
     // *I <inst:pin> <dir> ...
@@ -248,9 +248,9 @@ void handleConnLine(CircuitGraph& circ, const SpefState& st,
 
     // Resolve name map
     std::string nodeName = resolveSpefName(nodeTok, st.nameMap);
-    ParsedNode pn = parsePdNodeName(nodeName, coordToMeterScale);
+    ParsedNode pn = parsePdNodeName(nodeName, coordToMircoScale);
 
-    circ.ensureNode(pn.id, pn.netIndex, pn.xMeters, pn.yMeters);
+    circ.ensureNode(pn.mId, pn.mNet, pn.mXMicros, pn.mYMicros);
 }
 
 } // anonymous namespace
@@ -264,8 +264,9 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
     CircuitGraph circ;
     circ.mCoordinateUnit = coordUnit;
 
-    const double coordToMeterScale =
-      (coordUnit == CircuitGraph::UM) ? 1e-6 : 1e-3;
+    // Unit is either UM or MM
+    const int32_t coordToMircoScale =
+      (coordUnit == CircuitGraph::UM) ? 1 : 1000;
 
     SpefState st;
     std::string line;
@@ -403,7 +404,7 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
                     if (key.size() >= 2 && key[0] == '*' &&
                         (key[1] == 'P' || key[1] == 'I' || key[1] == 'D' ||
                          key[1] == 'p' || key[1] == 'i' || key[1] == 'd')) {
-                        handleConnLine(circ, st, tokens, coordToMeterScale);
+                        handleConnLine(circ, st, tokens, coordToMircoScale);
                         continue;
                     }
                 }
@@ -419,9 +420,9 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
             if (tokens.empty()) continue;
 
             if (st.netSection == NetSubSection::CAP) {
-                ensureNodesFromCap(circ, st, tokens, coordToMeterScale);
+                ensureNodesFromCap(circ, st, tokens, coordToMircoScale);
             } else if (st.netSection == NetSubSection::RES) {
-                addResistorFromSpef(circ, st, tokens, coordToMeterScale);
+                addResistorFromSpef(circ, st, tokens, coordToMircoScale);
             } else {
                 // Unexpected; ignore.
             }

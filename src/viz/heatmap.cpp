@@ -5,7 +5,6 @@
 // contains the implementation, including PNG writing via stb_image_write.
 
 #include "pdnsol/viz/heatmap.hpp"
-#include "pdnsol/utils/fixed_point_number.hpp"
 
 #include <cmath>
 #include <limits>
@@ -19,11 +18,12 @@
 // Make sure this is the only translation unit in your project that defines
 // STB_IMAGE_WRITE_IMPLEMENTATION, or adjust as needed.
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "../3rdparty/stb/stb_image_write.h"
+#include <../3rdparty/stb/stb_image_write.h>
 
 #include "pdnsol/common.hpp"
 #include "pdnsol/solver/solver_basic.hpp"
 #include "pdnsol/struct/circuit.hpp"
+#include "pdnsol/utils/fixed_point_number.hpp"
 
 namespace pdnsol {
 
@@ -44,8 +44,8 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
 
         if (skipGndNode && name == "GND") { continue; }
 
-        double x = FPN::fromRep(node.mX);
-        double y = FPN::fromRep(node.mY);
+        double x = FPN::fromRep(node.mXMicros);
+        double y = FPN::fromRep(node.mYMicros);
 
         if (x < bbox.minX) bbox.minX = x;
         if (y < bbox.minY) bbox.minY = y;
@@ -158,8 +158,8 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
         }
 
         // Convert coordinates to meters and then to pixel indices.
-        double x = FPN::fromRep(node.mX);
-        double y = FPN::fromRep(node.mY);
+        double x = FPN::fromRep(node.mXMicros);
+        double y = FPN::fromRep(node.mYMicros);
 
         int ix = static_cast<int>((x - bbox.minX) / dx);
         int iy = static_cast<int>((y - bbox.minY) / dy);
@@ -222,11 +222,11 @@ void extractScalarImage(const IRDropHeatmap& hm, std::vector<float>& out,
     }
 }
 
-// A simple blue->green->red "jet-like" colormap.
-// v is normalized between [vmin, vmax].
-RGB applyColormap(float v, float vmin, float vmax) {
+// A smooth "jet"-style colormap similar to MATLAB/Matplotlib "jet":
+// low values -> dark blue, then cyan/green, then yellow, then red.
+inline RGB applyColormap(float v, float vmin, float vmax) {
     if (std::isnan(v)) {
-        // Transparent / no data -> black
+        // No data -> black
         return RGB{0, 0, 0};
     }
 
@@ -235,31 +235,35 @@ RGB applyColormap(float v, float vmin, float vmax) {
         return RGB{127, 127, 127};
     }
 
+    // v is normalized between [vmin, vmax].
     float t = (v - vmin) / (vmax - vmin);
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
 
-    float r = 0.0f, g = 0.0f, b = 0.0f;
+    auto clip01 = [](float x) -> float {
+        if (x < 0.0f) return 0.0f;
+        if (x > 1.0f) return 1.0f;
+        return x;
+    };
 
-    // 0.0 -> blue, 0.5 -> green, 1.0 -> red
-    if (t < 0.25f) {
-        b = 1.0f;
-        g = 4.0f * t;
-    } else if (t < 0.5f) {
-        g = 1.0f;
-        b = 1.0f + 4.0f * (0.25f - t);
-    } else if (t < 0.75f) {
-        g = 1.0f;
-        r = 4.0f * (t - 0.5f);
-    } else {
-        r = 1.0f;
-        g = 1.0f + 4.0f * (0.75f - t);
-    }
+    // Jet-like approximation (see e.g. Matplotlib/MATLAB "jet" discussions):
+    //   r ~ peak around t=0.75
+    //   g ~ peak around t=0.50
+    //   b ~ peak around t=0.25
+    float r = clip01(1.5f - 4.0f * std::fabs(t - 0.75f));
+    float g = clip01(1.5f - 4.0f * std::fabs(t - 0.50f));
+    float b = clip01(1.5f - 4.0f * std::fabs(t - 0.25f));
+
+    auto toByte = [](float c) -> uint8_t {
+        if (c < 0.0f) c = 0.0f;
+        if (c > 1.0f) c = 1.0f;
+        return static_cast<uint8_t>(c * 255.0f + 0.5f);
+    };
 
     RGB color;
-    color.r = static_cast<uint8_t>(255.0f * r);
-    color.g = static_cast<uint8_t>(255.0f * g);
-    color.b = static_cast<uint8_t>(255.0f * b);
+    color.r = toByte(r);
+    color.g = toByte(g);
+    color.b = toByte(b);
     return color;
 }
 
@@ -270,10 +274,12 @@ RGB applyColormap(float v, float vmin, float vmax) {
 // Write a single heatmap to a PNG image file using stb_image_write.
 void writeHeatmapToPng(const IRDropHeatmap& hm, const std::string& filename,
                        bool useMaxValue) {
-    const int W = hm.width;
-    const int H = hm.height;
+    const int HEATMAP_W = hm.width;
+    const int HEATMAP_H = hm.height;
+    const int OUTPUT_W = 1024;
+    const int OUTPUT_H = 1024;
 
-    if (W <= 0 || H <= 0) {
+    if (HEATMAP_W <= 0 || HEATMAP_H <= 0) {
         throw std::runtime_error(
           "IR-drop heatmap: invalid dimensions for PNG.");
     }
@@ -297,27 +303,46 @@ void writeHeatmapToPng(const IRDropHeatmap& hm, const std::string& filename,
         vmax = 1.0f;
     }
 
-    // Allocate RGB buffer (row-major, top-to-bottom).
-    std::vector<uint8_t> pixels(static_cast<size_t>(W) *
-                                static_cast<size_t>(H) * 3u);
+    // Allocate RGB buffer for 1024x1024 output (row-major, top-to-bottom).
+    std::vector<uint8_t> pixels(static_cast<size_t>(OUTPUT_W) *
+                                static_cast<size_t>(OUTPUT_H) * 3u);
 
-    for (int y = 0; y < H; ++y) {
-        for (int x = 0; x < W; ++x) {
-            size_t idx = static_cast<size_t>(y) * static_cast<size_t>(W) +
-                         static_cast<size_t>(x);
-            RGB color = applyColormap(scalar[idx], vmin, vmax);
+    for (int y = 0; y < OUTPUT_H; ++y) {
+        for (int x = 0; x < OUTPUT_W; ++x) {
+            // Map output coordinates to heatmap coordinates
+            float heatmap_x = (static_cast<float>(x) / OUTPUT_W) * HEATMAP_W;
+            float heatmap_y = (static_cast<float>(y) / OUTPUT_H) * HEATMAP_H;
 
-            size_t base = idx * 3u;
-            pixels[base + 0] = color.r;
-            pixels[base + 1] = color.g;
-            pixels[base + 2] = color.b;
+            // Get the nearest neighbor in the heatmap
+            int heatmap_xi = static_cast<int>(heatmap_x);
+            int heatmap_yi = static_cast<int>(heatmap_y);
+
+            // Clamp to valid range
+            heatmap_xi = std::clamp(heatmap_xi, 0, HEATMAP_W - 1);
+            heatmap_yi = std::clamp(heatmap_yi, 0, HEATMAP_H - 1);
+
+            size_t heatmap_idx = static_cast<size_t>(heatmap_yi) *
+                                   static_cast<size_t>(HEATMAP_W) +
+                                 static_cast<size_t>(heatmap_xi);
+            RGB color = applyColormap(scalar[heatmap_idx], vmin, vmax);
+
+            size_t output_base =
+              (static_cast<size_t>(y) * OUTPUT_W + static_cast<size_t>(x)) *
+              3u;
+            pixels[output_base + 0] = color.r;
+            pixels[output_base + 1] = color.g;
+            pixels[output_base + 2] = color.b;
         }
     }
 
-    const int strideBytes = W * 3;
+    const int strideBytes = OUTPUT_W * 3;
 
-    if (!stbi_write_png(
-          filename.c_str(), W, H, /*comp=*/3, pixels.data(), strideBytes)) {
+    if (!stbi_write_png(filename.c_str(),
+                        OUTPUT_W,
+                        OUTPUT_H,
+                        /*comp=*/3,
+                        pixels.data(),
+                        strideBytes)) {
         throw std::runtime_error(
           "IR-drop heatmap: failed to write PNG file: " + filename);
     }

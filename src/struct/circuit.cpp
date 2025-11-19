@@ -1,4 +1,5 @@
 #include "pdnsol/struct/circuit.hpp"
+#include "pdnsol/utils/fixed_point_number.hpp"
 
 #include <stdexcept>
 #include <unordered_set>
@@ -23,16 +24,16 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     if (it != mNodes.end()) {
         Node& node = it->second;
         if (net && !node.mNet) node.mNet = net;
-        if (x && !node.mX) node.mX = *x;
-        if (y && !node.mY) node.mY = *y;
+        if (x && !node.mXMicros) node.mXMicros = FPN::toRep(*x);
+        if (y && !node.mYMicros) node.mYMicros = FPN::toRep(*y);
         return node;
     }
 
     Node newNode;
     newNode.mName = name;
     newNode.mNet = net;
-    newNode.mX = x ? *x : -1;
-    newNode.mY = y ? *y : -1;
+    newNode.mXMicros = x ? *x : -1;
+    newNode.mYMicros = y ? *y : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
     return insertIt->second;
 }

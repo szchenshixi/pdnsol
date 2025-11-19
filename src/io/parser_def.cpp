@@ -303,8 +303,8 @@ void applyAnchorsFromDef(const DefDesign& def, CircuitGraph& circ) {
         auto pit = def.pins.find(name);
         if (pit != def.pins.end() && pit->second.xMeters >= 0.0 &&
             pit->second.yMeters >= 0.0) {
-            node.mX = pit->second.xMeters;
-            node.mY = pit->second.yMeters;
+            node.mXMicros = pit->second.xMeters;
+            node.mYMicros = pit->second.yMeters;
             continue;
         }
 
@@ -322,8 +322,8 @@ void applyAnchorsFromDef(const DefDesign& def, CircuitGraph& circ) {
             auto cit = def.comps.find(instName);
             if (cit != def.comps.end() && cit->second.xMeters >= 0.0 &&
                 cit->second.yMeters >= 0.0) {
-                node.mX = cit->second.xMeters;
-                node.mY = cit->second.yMeters;
+                node.mXMicros = cit->second.xMeters;
+                node.mYMicros = cit->second.yMeters;
                 continue;
             }
         }

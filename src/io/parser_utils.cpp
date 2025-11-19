@@ -1,4 +1,5 @@
 #include "pdnsol/io/parser_utils.hpp"
+#include "pdnsol/utils/fixed_point_number.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -95,16 +96,16 @@ std::vector<std::string> splitOnChar(const std::string& s, char delim) {
 // PDN node name parsing
 // -------------------------
 
-ParsedNode parsePdNodeName(const std::string& raw, double coordToMeterScale) {
+ParsedNode parsePdNodeName(const std::string& raw, int32_t coordToMircoScale) {
     ParsedNode out;
 
     // Map SPICE/SPEF-style ground representations to canonical "GND"
     if (raw == "0" || iequals(raw, "gnd")) {
-        out.id = IdString("GND");
+        out.mId = IdString("GND");
         return out;
     }
 
-    out.id = IdString(raw);
+    out.mId = IdString(raw);
 
     // Detect your PDN convention: n<net>_<x>_<y>
     if (raw.size() > 1 && (raw[0] == 'n' || raw[0] == 'N')) {
@@ -115,9 +116,9 @@ ParsedNode parsePdNodeName(const std::string& raw, double coordToMeterScale) {
                 int32_t net = static_cast<int32_t>(std::stoi(parts[0]));
                 double x = std::stod(parts[1]);
                 double y = std::stod(parts[2]);
-                out.netIndex = net;
-                out.xMeters = x * coordToMeterScale;
-                out.yMeters = y * coordToMeterScale;
+                out.mNet = net;
+                out.mXMicros = x * coordToMircoScale;
+                out.mYMicros = y * coordToMircoScale;
             } catch (...) {
                 // If parsing fails, leave netIndex/x/y as defaults.
             }

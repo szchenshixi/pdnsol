@@ -31,6 +31,7 @@ add_library(
   PdnSol_lib OBJECT
   src/utils/logging.cpp
   src/utils/id_string.cpp
+  src/utils/perf_stats.cpp
   src/utils/fixed_point_number.cpp
   src/io/parser_def.cpp
   src/io/parser_utils.cpp

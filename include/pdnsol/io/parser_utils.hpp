@@ -1,9 +1,9 @@
 #pragma once
 
-#include <optional>
 #include <string>
 #include <vector>
 
+#include "pdnsol/common.hpp"
 #include "pdnsol/utils/id_string.hpp"
 
 // Shared parsing utilities for SPICE and SPEF
@@ -28,10 +28,10 @@ std::vector<std::string> splitOnChar(const std::string& s, char delim);
 // -------------------------
 
 struct ParsedNode {
-    IdString id;                   // canonical node id (with GND mapping)
-    int32_t netIndex = -1;         // e.g. from "n<net>_x_y"
-    std::optional<double> xMeters; // in meters
-    std::optional<double> yMeters;
+    IdString mId;      // canonical node id (with GND mapping)
+    int32_t mNet = -1; // e.g. from "n<net>_x_y"
+    double mXMicros;   // in micrometers
+    double mYMicros;   // in micrometers
 };
 
 // Map a node name to ParsedNode, using your PDN convention:
@@ -40,8 +40,8 @@ struct ParsedNode {
 //   n<net>_<x>_<y>  -> PDN node with net-index and coordinates
 //   others          -> general node; netIndex/x/y left unset
 //
-// coordToMeterScale converts x/y into meters (UM => 1e-6, MM => 1e-3).
-ParsedNode parsePdNodeName(const std::string& raw, double coordToMeterScale);
+// coordToMircoScale converts x/y into meters (UM => 1, MM => 1e3).
+ParsedNode parsePdNodeName(const std::string& raw, int32_t coordToMircoScale);
 
 // True if this looks like a package node (e.g. "_X_n3_0_0")
 bool isPackageNodeName(const std::string& name);

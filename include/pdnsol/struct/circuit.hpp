@@ -9,9 +9,9 @@ namespace pdnsol {
 // -------------------------------
 struct Node {
     IdString mName;
-    int32_t mNet; // Layer-(VDD/VSS) combination
-    Tick mX;      // meters
-    Tick mY;      // meters
+    int32_t mNet;  // Layer-(VDD/VSS) combination
+    Tick mXMicros; // micrometers, in 1e-6 meter
+    Tick mYMicros; // micrometers, in 1e-6 meter
 };
 
 struct MetalRes {

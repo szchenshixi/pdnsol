@@ -57,8 +57,8 @@ class MNASolution;
 
 struct IRDropHeatmapConfig {
     // Output resolution (same for all nets).
-    int width = 4096;
-    int height = 4096;
+    int width = 32;
+    int height = 32;
 
     // Bounding box in layout coordinates (meters).
     // If useCustomBBox == false, the bounding box is inferred
@@ -160,8 +160,8 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
 // Decode netId into (layerIndex, isVdd).
 inline NetDecomposition decodeNetId(int32_t netId) {
     NetDecomposition d;
-    d.layer = netId / 2;
-    d.isVdd = ((netId % 2) == 0);
+    d.layer = netId / 2 + 1;
+    d.isVdd = ((netId % 2) == 1);
     return d;
 }
 
