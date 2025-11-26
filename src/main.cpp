@@ -1,5 +1,8 @@
+#include <iostream>
+
 #include "pdnsol/io/parser_spef.hpp"
 #include "pdnsol/io/parser_spice.hpp"
+#include "pdnsol/solver/circuit_coarsener.hpp"
 #include "pdnsol/solver/solver_basic.hpp"
 #include "pdnsol/utils/logging.hpp"
 #include "pdnsol/utils/perf_stats.hpp"
@@ -19,28 +22,64 @@ void init() {
 int main() {
     PERF_STATS("main");
     init();
+
+    // 0. Configure heatmap
+    IRDropHeatmapConfig heatmapCfg;
+    heatmapCfg.width  = 32;
+    heatmapCfg.height = 32;
+
     // CircuitGraph circ =
     //   parseSpefFile("./test/data/datc-rdf-calibrations-master/calibration/"
     //                 "sky130hd/aes_cipher_top/aes_cipher_top_1.spef");
-    CircuitGraph circ =
+    // 1. Prepare the circuits
+    CircuitGraph fcirc =
       parseSpiceFile("/home/szchenshixi/git_repository/pdnsol_cpp/test/data/"
                      "ibmpg/6/ibmpg6.spice");
-    MNASystem mna = assembleMNA(circ);
-    MNASolution sol = solveMNA(mna);
+    // CircuitGraph
+    CoarseModelConfig cfg;
+    cfg.tileSizeUm = 100.0;
 
-    // 2. Configure heatmap
-    IRDropHeatmapConfig cfg;
-    cfg.width = 32;
-    cfg.height = 32;
+    // Suppose your MetalRes::mName for layers are something like:
+    // "M1_VDD", "M2_VDD", ..., "M9_VDD", and similarly for VSS.
 
-    // 3. Build heatmap for the chosen net(s)
-    HeatmapByNet hm = buildIRDropHeatmapsMultiNet(circ, sol, cfg);
+    // Mark bottom rails accurate:
+    // cfg.perLayerMode[IdString("M1_VDD")] = LayerMode::Accurate;
+    // cfg.perLayerMode[IdString("M1_VSS")] = LayerMode::Accurate;
 
-    // 4. Export
-    writeAllHeatmapsToPng(hm, "work", /*useMaxValue=*/true);
-    // IdString i("i");
-    // IdString ii("ii");
-    // PDN_INFO("%s", i.c_str());
-    // PDN_INFO("%s", ii.c_str());
+    // Mark top metals accurate:
+    // cfg.perLayerMode[IdString("M9_VDD")] = LayerMode::Accurate;
+    // cfg.perLayerMode[IdString("M9_VSS")] = LayerMode::Accurate;
+
+    // All other layers (M2..M8 for both rails) default to Approximate.
+
+    CircuitCoarsener coarsener(fcirc, cfg);
+    CircuitGraph     ccirc = coarsener.build();
+
+    {
+        PERF_STATS("Profiling full circuit");
+        PDN_INFO("Starting profiling full circuit");
+        // 2. Solve the MNA system
+        MNASystem    fmna = assembleMNA(fcirc);
+        MNASolution  fsol = solveMNA(fmna);
+        // 3. Build heatmap for the chosen net(s)
+        HeatmapByNet fhm =
+          buildIRDropHeatmapsMultiNet(fcirc, fsol, heatmapCfg);
+        // 4. Export
+        writeAllHeatmapsToPng(fhm, "work_full", /*useMaxValue=*/true);
+    }
+
+    {
+        PERF_STATS("Profiling coarse circuit");
+        PDN_INFO("Starting profiling coarse circuit");
+        // 2. Solve the MNA system
+        MNASystem    cmna = assembleMNA(ccirc);
+        MNASolution  csol = solveMNA(cmna);
+        // 3. Build heatmap for the chosen net(s)
+        HeatmapByNet chm =
+          buildIRDropHeatmapsMultiNet(ccirc, csol, heatmapCfg);
+        // 4. Export
+        writeAllHeatmapsToPng(chm, "work_coarse", /*useMaxValue=*/true);
+    }
+
     return 0;
 }

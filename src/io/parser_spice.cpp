@@ -9,6 +9,7 @@
 #include <string>
 
 #include "pdnsol/io/parser_utils.hpp"
+#include "pdnsol/utils/logging.hpp"
 
 // -------------------------
 // Small string utilities
@@ -26,12 +27,12 @@ double parseSpiceNumber(const std::string& token) {
     }
 
     std::string lower = toLower(t);
-    double scale = 1.0;
+    double      scale = 1.0;
 
     // Handle multi-char suffix 'meg'
     if (lower.size() > 3 && lower.substr(lower.size() - 3) == "meg") {
         scale = 1e6;
-        t = t.substr(0, t.size() - 3);
+        t     = t.substr(0, t.size() - 3);
     } else {
         char last = static_cast<char>(
           std::tolower(static_cast<unsigned char>(lower.back())));
@@ -87,10 +88,10 @@ double parseSpiceNumber(const std::string& token) {
 // -------------------------
 
 struct ParsedNode {
-    IdString id;                   // canonical node id (with GND mapping)
-    int32_t netIndex = -1;         // from "n<net>_x_y" (if available)
-    std::optional<double> xMeters; // converted to meters
-    std::optional<double> yMeters;
+    IdString              id; // canonical node id (with GND mapping)
+    int32_t               netIndex = -1; // from "n<net>_x_y" (if available)
+    std::optional<double> x;             // micrometer
+    std::optional<double> y;             // micrometer
 };
 
 // Map SPICE node name to ParsedNode.  Node forms:
@@ -98,7 +99,7 @@ struct ParsedNode {
 //   gnd / GND      -> ground
 //   n<net>_x_y     -> PDN node with net-index and coordinates
 //   anything else  -> arbitrary node (package, etc.)
-ParsedNode parseNodeName(const std::string& raw, int32_t coordToMircoScale) {
+ParsedNode parseNodeName(const std::string& raw, int32_t coordToMicroScale) {
     ParsedNode out;
 
     // Ground mapping
@@ -109,18 +110,39 @@ ParsedNode parseNodeName(const std::string& raw, int32_t coordToMircoScale) {
 
     out.id = IdString(raw);
 
+    // Check for Package node: _X_n<net>_<x>_<y>
+    if (raw.size() > 4 && raw.substr(0, 3) == "_X_") {
+        std::string rest = raw.substr(3); // drop leading '_X_'
+        if (rest.size() > 1 && (rest[0] == 'n' || rest[0] == 'N')) {
+            std::string geometryPart = rest.substr(1); // drop leading 'n'
+            auto        parts        = splitOnChar(geometryPart, '_');
+            if (parts.size() == 3) {
+                try {
+                    int32_t net  = static_cast<int32_t>(std::stoi(parts[0]));
+                    double  x    = std::stod(parts[1]);
+                    double  y    = std::stod(parts[2]);
+                    out.netIndex = -net; // package nodes feature negative net
+                    out.x        = x * coordToMicroScale;
+                    out.y        = y * coordToMicroScale;
+                } catch (...) {
+                    // If parsing fails, leave netIndex/x/y as defaults.
+                }
+            }
+        }
+    }
+
     // Geometry node: n<net>_<x>_<y>
     if (raw.size() > 1 && (raw[0] == 'n' || raw[0] == 'N')) {
-        std::string rest = raw.substr(1); // drop leading 'n'
-        auto parts = splitOnChar(rest, '_');
+        std::string rest  = raw.substr(1); // drop leading 'n'
+        auto        parts = splitOnChar(rest, '_');
         if (parts.size() == 3) {
             try {
-                int32_t net = static_cast<int32_t>(std::stoi(parts[0]));
-                double x = std::stod(parts[1]);
-                double y = std::stod(parts[2]);
+                int32_t net  = static_cast<int32_t>(std::stoi(parts[0]));
+                double  x    = std::stod(parts[1]);
+                double  y    = std::stod(parts[2]);
                 out.netIndex = net;
-                out.xMeters = x * coordToMircoScale;
-                out.yMeters = y * coordToMircoScale;
+                out.x        = x * coordToMicroScale;
+                out.y        = y * coordToMicroScale;
             } catch (...) {
                 // If parsing fails, leave netIndex/x/y as defaults.
             }
@@ -147,11 +169,11 @@ struct ParseState {
     // For METAL_LAYER
     IdString layerName;
     IdString layerNetName; // e.g., "VDD", "GND"
-    int32_t layerNetIndex = -1;
+    int32_t  layerNetIndex = -1;
 
     // For VIA_SECTION
     int32_t viaFromNet = -1;
-    int32_t viaToNet = -1;
+    int32_t viaToNet   = -1;
 };
 
 // Parse a comment line that may contain "* layer:" or "* vias from:"
@@ -160,7 +182,8 @@ void parseCommentMeta(
   const std::string& lineBody, // already without leading '*'
   CircuitGraph& circ, ParseState& st) {
     std::string content = trim(lineBody);
-    if (content.empty()) return;
+    if (content.empty())
+        return;
 
     std::string lower = toLower(content);
 
@@ -168,11 +191,12 @@ void parseCommentMeta(
     if (startsWithIgnoreCase(lower, "layer:")) {
         std::string rest = trim(content.substr(std::string("layer:").size()));
         // rest: "M1,VDD net: 1"
-        auto tokens = splitWhitespace(rest);
-        if (tokens.empty()) return;
+        auto        tokens = splitWhitespace(rest);
+        if (tokens.empty())
+            return;
 
         // First token: "<layerName>,<netName>"
-        auto nameParts = splitOnChar(tokens[0], ',');
+        auto        nameParts = splitOnChar(tokens[0], ',');
         std::string layerNameStr =
           nameParts.size() > 0 ? trim(nameParts[0]) : "";
         std::string netNameStr =
@@ -180,35 +204,37 @@ void parseCommentMeta(
 
         int32_t netIndex = -1;
         for (std::size_t i = 1; i < tokens.size(); ++i) {
-            std::string t = toLower(tokens[i]);
-            auto pos = t.find("net:");
+            std::string t   = toLower(tokens[i]);
+            auto        pos = t.find("net:");
             if (pos != std::string::npos) {
                 std::string numStr = t.substr(pos + 4); // after "net:"
-                numStr = trim(numStr);
+                numStr             = trim(numStr);
                 if (numStr.empty() && i + 1 < tokens.size()) {
                     numStr = tokens[i + 1];
                 }
                 try {
                     netIndex = static_cast<int32_t>(std::stoi(numStr));
-                } catch (...) { netIndex = -1; }
+                } catch (...) {
+                    netIndex = -1;
+                }
                 break;
             }
         }
 
-        st.current = SectionKind::METAL_LAYER;
-        st.layerName = IdString(layerNameStr);
-        st.layerNetName = IdString(netNameStr);
+        st.current       = SectionKind::METAL_LAYER;
+        st.layerName     = IdString(layerNameStr);
+        st.layerNetName  = IdString(netNameStr);
         st.layerNetIndex = netIndex;
-        st.viaFromNet = -1;
-        st.viaToNet = -1;
+        st.viaFromNet    = -1;
+        st.viaToNet      = -1;
 
         SectionMeta meta;
-        meta.mType = IdString("layer");
-        meta.mName = IdString(layerNameStr);
-        meta.mNet = IdString(netNameStr);                   // textual net name
+        meta.mType    = IdString("layer");
+        meta.mName    = IdString(layerNameStr);
+        meta.mNet     = IdString(netNameStr);               // textual net name
         meta.mFromNet = IdString(std::to_string(netIndex)); // store index here
-        meta.mToNet = IdString("");                         // unused for layer
-        meta.mRaw = IdString(content);
+        meta.mToNet   = IdString("");                       // unused for layer
+        meta.mRaw     = IdString(content);
         circ.mSections.push_back(std::move(meta));
         return;
     }
@@ -217,35 +243,39 @@ void parseCommentMeta(
     if (startsWithIgnoreCase(lower, "vias from:")) {
         std::string rest =
           trim(content.substr(std::string("vias from:").size()));
-        auto tokens = splitWhitespace(rest);
+        auto    tokens  = splitWhitespace(rest);
         int32_t fromNet = -1;
-        int32_t toNet = -1;
+        int32_t toNet   = -1;
 
         if (!tokens.empty()) {
             try {
                 fromNet = static_cast<int32_t>(std::stoi(tokens[0]));
-            } catch (...) { fromNet = -1; }
+            } catch (...) {
+                fromNet = -1;
+            }
         }
         for (std::size_t i = 1; i + 1 < tokens.size(); ++i) {
             if (iequals(tokens[i], "to")) {
                 try {
                     toNet = static_cast<int32_t>(std::stoi(tokens[i + 1]));
-                } catch (...) { toNet = -1; }
+                } catch (...) {
+                    toNet = -1;
+                }
                 break;
             }
         }
 
-        st.current = SectionKind::VIA_SECTION;
+        st.current    = SectionKind::VIA_SECTION;
         st.viaFromNet = fromNet;
-        st.viaToNet = toNet;
+        st.viaToNet   = toNet;
 
         SectionMeta meta;
-        meta.mType = IdString("vias");
-        meta.mName = IdString(""); // no explicit name
-        meta.mNet = IdString("");  // unused
+        meta.mType    = IdString("vias");
+        meta.mName    = IdString(""); // no explicit name
+        meta.mNet     = IdString(""); // unused
         meta.mFromNet = IdString(std::to_string(fromNet));
-        meta.mToNet = IdString(std::to_string(toNet));
-        meta.mRaw = IdString(content);
+        meta.mToNet   = IdString(std::to_string(toNet));
+        meta.mRaw     = IdString(content);
         circ.mSections.push_back(std::move(meta));
         return;
     }
@@ -260,23 +290,22 @@ void parseCommentMeta(
 void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
                    const ParseState& st, int32_t coordToMircoScale) {
     if (tokens.size() < 4) {
-        throw std::runtime_error("Resistor line has fewer than 4 tokens: '" +
-                                 (tokens.empty() ? std::string{} : tokens[0]) +
-                                 "'");
+        PDN_FATAL("Resistor line has fewer than 4 tokens: '%s'",
+                  (tokens.empty() ? std::string{} : tokens[0]).c_str());
     }
 
-    const std::string& name = tokens[0];
+    const std::string& name  = tokens[0];
     const std::string& n1Str = tokens[1];
     const std::string& n2Str = tokens[2];
-    const std::string& val = tokens[3];
+    const std::string& val   = tokens[3];
 
     double R = parseSpiceNumber(val);
 
     ParsedNode pn1 = parseNodeName(n1Str, coordToMircoScale);
     ParsedNode pn2 = parseNodeName(n2Str, coordToMircoScale);
 
-    circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
-    circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
+    circ.ensureNode(pn1.id, pn1.netIndex, pn1.x, pn1.y);
+    circ.ensureNode(pn2.id, pn2.netIndex, pn2.x, pn2.y);
 
     char firstChar =
       static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
@@ -289,32 +318,34 @@ void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
         // Via implemented as resistor
         ViaRes via;
         via.mName = IdString(name);
-        via.mN1 = pn1.id;
-        via.mN2 = pn2.id;
-        via.mR = R;
+        via.mN1   = pn1.id;
+        via.mN2   = pn2.id;
+        via.mR    = R;
         circ.mViaResistors.push_back(std::move(via));
     } else if (st.current == SectionKind::METAL_LAYER) {
         // On-chip metal
         MetalRes mr;
         mr.mName = IdString(name);
-        mr.mN1 = pn1.id;
-        mr.mN2 = pn2.id;
+        mr.mN1   = pn1.id;
+        mr.mN2   = pn2.id;
 
         int32_t netIdx = st.layerNetIndex;
         if (netIdx < 0) {
-            if (pn1.netIndex >= 0) netIdx = pn1.netIndex;
-            else if (pn2.netIndex >= 0) netIdx = pn2.netIndex;
+            if (pn1.netIndex >= 0)
+                netIdx = pn1.netIndex;
+            else if (pn2.netIndex >= 0)
+                netIdx = pn2.netIndex;
         }
         mr.mNet = netIdx;
-        mr.mR = R;
+        mr.mR   = R;
         circ.mMetalResistors.push_back(std::move(mr));
     } else {
         // Outside known layer/via sections -> treat as package resistor
         PkgRes pr;
         pr.mName = IdString(name);
-        pr.mN1 = pn1.id;
-        pr.mN2 = pn2.id;
-        pr.mR = R;
+        pr.mN1   = pn1.id;
+        pr.mN2   = pn2.id;
+        pr.mR    = R;
         circ.mPkgResistors.push_back(std::move(pr));
     }
 }
@@ -323,49 +354,53 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
                         CircuitGraph& circ, const ParseState& st,
                         int32_t coordToMircoScale, bool& seenGlobalVsrc) {
     if (tokens.size() < 4) {
-        throw std::runtime_error(
-          "Voltage source line has fewer than 4 tokens: '" +
-          (tokens.empty() ? std::string{} : tokens[0]) + "'");
+        PDN_FATAL("Voltage source line has fewer than 4 tokens: '%s'",
+                  (tokens.empty() ? std::string{} : tokens[0]).c_str());
     }
 
-    const std::string& name = tokens[0];
+    const std::string& name  = tokens[0];
     const std::string& n1Str = tokens[1];
     const std::string& n2Str = tokens[2];
-    const std::string& val = tokens[3];
+    const std::string& val   = tokens[3];
 
     double V = parseSpiceNumber(val);
 
     ParsedNode pn1 = parseNodeName(n1Str, coordToMircoScale);
     ParsedNode pn2 = parseNodeName(n2Str, coordToMircoScale);
 
-    circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
-    circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
-
-    Vsrc src;
-    src.mName = IdString(name);
-    src.mFromNode = pn1.id;
-    src.mToNode = pn2.id;
-    src.mV = V;
-    src.mType = Vsrc::OTHER;
+    circ.ensureNode(pn1.id, pn1.netIndex, pn1.x, pn1.y);
+    circ.ensureNode(pn2.id, pn2.netIndex, pn2.x, pn2.y);
 
     if (st.current == SectionKind::VIA_SECTION) {
-        // Vias implemented as zero-voltage sources
-        src.mType = Vsrc::VIA;
-    } else {
-        bool connectsToGnd =
-          (pn1.id == IdString("GND") || pn2.id == IdString("GND"));
+        // DEBUG: Vias implemented as a constant resistor no mater what
+        ViaRes src;
+        src.mName = IdString(name);
+        src.mN1   = pn1.id;
+        src.mN2   = pn2.id;
+        src.mR    = 0.1; // Ohm
+        circ.mViaResistors.push_back(std::move(src));
+        return;
+    }
 
-        bool touchesPackage =
-          (isPackageNodeName(n1Str) || isPackageNodeName(n2Str));
+    Vsrc src;
+    src.mName     = IdString(name);
+    src.mFromNode = pn1.id;
+    src.mToNode   = pn2.id;
+    src.mV        = V;
+    src.mType     = Vsrc::OTHER;
+    bool connectsToGnd =
+      (pn1.id == IdString("GND") || pn2.id == IdString("GND"));
 
-        if (!seenGlobalVsrc && connectsToGnd && std::fabs(V) > 0.0) {
-            // First non-zero Vsrc tied to ground => treat as global VDD
-            src.mType = Vsrc::GLOBAL;
-            seenGlobalVsrc = true;
-        } else if (touchesPackage) {
-            // Tie between package node(s) and something else
-            src.mType = Vsrc::PACKAGE;
-        }
+    bool touchesPackage =
+      (isPackageNodeName(n1Str) || isPackageNodeName(n2Str));
+
+    if (!seenGlobalVsrc && connectsToGnd && std::fabs(V) > 0.0) {
+        // First non-zero Vsrc tied to ground => treat as global VDD
+        src.mType      = Vsrc::GLOBAL;
+        seenGlobalVsrc = true;
+    } else if (touchesPackage) {
+        // Tie between package node(s) and something else
+        src.mType = Vsrc::PACKAGE;
     }
 
     circ.mVsrcs.push_back(std::move(src));
@@ -374,29 +409,28 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
 void parseCurrentSource(const std::vector<std::string>& tokens,
                         CircuitGraph& circ, int32_t coordToMircoScale) {
     if (tokens.size() < 4) {
-        throw std::runtime_error(
-          "Current source line has fewer than 4 tokens: '" +
-          (tokens.empty() ? std::string{} : tokens[0]) + "'");
+        PDN_FATAL("Current source line has fewer than 4 tokens: '%s'",
+                  (tokens.empty() ? std::string{} : tokens[0]).c_str());
     }
 
-    const std::string& name = tokens[0];
+    const std::string& name  = tokens[0];
     const std::string& n1Str = tokens[1];
     const std::string& n2Str = tokens[2];
-    const std::string& val = tokens[3];
+    const std::string& val   = tokens[3];
 
     double I = parseSpiceNumber(val);
 
     ParsedNode pn1 = parseNodeName(n1Str, coordToMircoScale);
     ParsedNode pn2 = parseNodeName(n2Str, coordToMircoScale);
 
-    circ.ensureNode(pn1.id, pn1.netIndex, pn1.xMeters, pn1.yMeters);
-    circ.ensureNode(pn2.id, pn2.netIndex, pn2.xMeters, pn2.yMeters);
+    circ.ensureNode(pn1.id, pn1.netIndex, pn1.x, pn1.y);
+    circ.ensureNode(pn2.id, pn2.netIndex, pn2.x, pn2.y);
 
     Isrc src;
-    src.mName = IdString(name);
+    src.mName     = IdString(name);
     src.mFromNode = pn1.id;
-    src.mToNode = pn2.id;
-    src.mI = I;
+    src.mToNode   = pn2.id;
+    src.mI        = I;
 
     std::string lowerName = toLower(name);
     if (startsWithIgnoreCase(lowerName, "ib")) {
@@ -408,7 +442,7 @@ void parseCurrentSource(const std::vector<std::string>& tokens,
     circ.mIsrcs.push_back(std::move(src));
 }
 
-}  // anonymous namespace
+} // anonymous namespace
 
 namespace pdnsol {
 // -------------------------
@@ -423,7 +457,7 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
       (coordUnit == CircuitGraph::UM) ? 1 : 1000;
 
     ParseState st;
-    bool seenGlobalVsrc = false;
+    bool       seenGlobalVsrc = false;
 
     std::string line;
     std::size_t lineNumber = 0;
@@ -431,7 +465,8 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
     while (std::getline(in, line)) {
         ++lineNumber;
         std::string stripped = trim(line);
-        if (stripped.empty()) continue;
+        if (stripped.empty())
+            continue;
 
         // Comment or meta line
         if (stripped[0] == '*') {
@@ -440,7 +475,9 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
         }
 
         // Dot commands (.op, .end, etc.) are ignored for now
-        if (stripped[0] == '.') { continue; }
+        if (stripped[0] == '.') {
+            continue;
+        }
 
         // Line continuation (starting with '+') is not handled here.
         if (stripped[0] == '+') {
@@ -452,7 +489,8 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
         }
 
         auto tokens = splitWhitespace(stripped);
-        if (tokens.empty()) continue;
+        if (tokens.empty())
+            continue;
 
         char elemType = static_cast<char>(
           std::toupper(static_cast<unsigned char>(tokens[0][0])));
@@ -470,18 +508,17 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
                 parseCurrentSource(tokens, circ, coordToMircoScale);
                 break;
             default:
-                // Unknown / unsupported element; silently ignore or log
-                // If you prefer, throw an exception instead.
-                // throw std::runtime_error("Unsupported element type at line "
-                // +
-                //                          std::to_string(lineNumber) + ": " +
-                //                          line);
+                // Unknown / unsupported element; silently ignore and log
+                PDN_ERROR("Unsupported element type at line %d: %s",
+                          lineNumber,
+                          line.c_str());
                 break;
             }
         } catch (const std::exception& e) {
-            throw std::runtime_error("Error parsing line " +
-                                     std::to_string(lineNumber) + ": '" +
-                                     line + "': " + e.what());
+            PDN_FATAL("Error parsing line %d: %s: %s",
+                      lineNumber,
+                      line.c_str(),
+                      e.what());
         }
     }
 
@@ -494,7 +531,7 @@ CircuitGraph parseSpiceFile(const std::string& path,
                             CircuitGraph::Unit coordUnit) {
     std::ifstream ifs(path);
     if (!ifs) {
-        throw std::runtime_error("Failed to open SPICE file: " + path);
+        PDN_FATAL("Failed to open SPICE file: %s", path.c_str());
     }
     return parseSpice(ifs, coordUnit);
 }

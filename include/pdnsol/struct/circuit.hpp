@@ -9,30 +9,30 @@ namespace pdnsol {
 // -------------------------------
 struct Node {
     IdString mName;
-    int32_t mNet;  // Layer-(VDD/VSS) combination
-    Tick mXMicros; // micrometers, in 1e-6 meter
-    Tick mYMicros; // micrometers, in 1e-6 meter
+    int32_t  mNet; // Layer-(VDD/VSS) combination
+    Tick     mX;   // micrometers, in FPN format
+    Tick     mY;   // micrometers, in FPN format
 };
 
 struct MetalRes {
-    IdString mName;
-    int32_t mNet; // Layer-(VDD/VSS) combination
-    IdString mN1; // Node_1
-    IdString mN2; // Node_2
+    IdString   mName;
+    int32_t    mNet; // Layer-(VDD/VSS) combination
+    IdString   mN1;  // Node_1
+    IdString   mN2;  // Node_2
     ScalarType mR = 0.0;
 };
 
 struct ViaRes {
-    IdString mName;
-    IdString mN1;
-    IdString mN2;
+    IdString   mName;
+    IdString   mN1;
+    IdString   mN2;
     ScalarType mR = 0.0;
 };
 
 struct PkgRes {
-    IdString mName;
-    IdString mN1;
-    IdString mN2;
+    IdString   mName;
+    IdString   mN1;
+    IdString   mN2;
     ScalarType mR = 0.0; // Resistance, Ohm
 };
 
@@ -42,8 +42,8 @@ struct Vsrc {
     IdString mToNode;
     // subtypes: "global", "via", "package", "other"
     enum Type { GLOBAL, VIA, PACKAGE, OTHER };
-    Type mType = OTHER;
-    ScalarType mV = 0.0;
+    Type       mType = OTHER;
+    ScalarType mV    = 0.0;
 };
 
 struct Isrc {
@@ -52,30 +52,30 @@ struct Isrc {
     IdString mToNode;
     // subtypes: "iB", "other"
     enum Type { IB, OTHER };
-    Type mType = OTHER;
-    ScalarType mI = 0.0; // Current, Amp
+    Type       mType = OTHER;
+    ScalarType mI    = 0.0; // Current, Amp
 };
 
 struct SectionMeta {
-    IdString mType; // "layer" or "vias"
-    IdString mName;
-    IdString mNet;
-    IdString mFromNet;
-    IdString mToNet;
+    IdString                mType; // "layer" or "vias"
+    IdString                mName;
+    IdString                mNet;
+    IdString                mFromNet;
+    IdString                mToNet;
     std::optional<IdString> mRaw;
 };
 
 struct CircuitGraph {
     enum Unit { UM, MM }; // Input unit
-    Unit mCoordinateUnit = UM;
-    NodeMap mNodes;
-    std::vector<MetalRes> mMetalResistors;
-    std::vector<ViaRes> mViaResistors;
-    std::vector<PkgRes> mPkgResistors;
-    std::vector<Vsrc> mVsrcs;
-    std::vector<Isrc> mIsrcs;
+    Unit                     mCoordinateUnit = UM;
+    NodeMap                  mNodes;
+    std::vector<MetalRes>    mMetalResistors;
+    std::vector<ViaRes>      mViaResistors;
+    std::vector<PkgRes>      mPkgResistors;
+    std::vector<Vsrc>        mVsrcs;
+    std::vector<Isrc>        mIsrcs;
     std::vector<SectionMeta> mSections;
-    IdStringMap mMetadata;
+    IdStringMap              mMetadata;
 
     // Return all nodes (const access)
     const NodeMap& allNodes() const;
@@ -85,13 +85,13 @@ struct CircuitGraph {
                      std::optional<double> x = std::nullopt,
                      std::optional<double> y = std::nullopt);
 
-    std::size_t countVoltageSources() const;
-
     // Convenience: ensure all referenced nodes exist
     void ensureAllReferencedNodesExist();
 
     bool refersToGround() const;
 
     void validateReadyForMna() const;
+
+    void purge_parallel_elements();
 };
 } // namespace pdnsol

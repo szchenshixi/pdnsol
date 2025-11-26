@@ -6,15 +6,19 @@
 #	$clang-format -dump-config >> _clang-format
 # Non-changed but more useful properties are left commented out
 
-Language:      Cpp
+Language:        Cpp
 BasedOnStyle:  LLVM
 
+AlignConsecutiveBitFields: AcrossComments
+AlignConsecutiveAssignments: AcrossComments
+AlignConsecutiveDeclarations: AcrossComments
 AlignEscapedNewlinesLeft: true
 #AlignConsecutiveMacros: true
+
 AlwaysBreakTemplateDeclarations: true
-AllowShortCaseLabelsOnASingleLine: true
-AllowShortBlocksOnASingleLine: Always
 AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortFunctionsOnASingleLine: InlineOnly
+AllowShortCaseLabelsOnASingleLine: true
 BinPackArguments: false
 #BinPackParameters: true
 BraceWrapping:
@@ -31,13 +35,13 @@ BraceWrapping:
   IndentBraces:    false
 BreakBeforeBraces: Custom
 BreakConstructorInitializersBeforeComma: true
-ColumnLimit:       79
+ColumnLimit:     79
 # Pattern ignored by clang-format
 CommentPragmas:    ''
 ContinuationIndentWidth: 2
 FixNamespaceComments: true
 IndentCaseLabels: false
-IndentWidth:      4
+IndentWidth:     4
 PointerAlignment: Left
 # Sorting includes can break the codebase. Disable it if anything goes wrong.
 # [Ref] https://stackoverflow.com/questions/37927553/can-clang-format-break-my-code

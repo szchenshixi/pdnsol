@@ -44,10 +44,10 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
 
         if (skipGndNode && name == "GND") { continue; }
         // The node has no geometry information
-        if (node.mXMicros < 0 || node.mYMicros < 0) { continue; }
+        if (node.mX < 0 || node.mY < 0) { continue; }
 
-        double x = FPN::fromRep(node.mXMicros);
-        double y = FPN::fromRep(node.mYMicros);
+        double x = FPN::fromRep(node.mX);
+        double y = FPN::fromRep(node.mY);
 
         if (x < bbox.minX) bbox.minX = x;
         if (y < bbox.minY) bbox.minY = y;
@@ -160,8 +160,8 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
         }
 
         // Convert coordinates to meters and then to pixel indices.
-        double x = FPN::fromRep(node.mXMicros);
-        double y = FPN::fromRep(node.mYMicros);
+        double x = FPN::fromRep(node.mX);
+        double y = FPN::fromRep(node.mY);
 
         int ix = static_cast<int>((x - bbox.minX) / dx);
         int iy = static_cast<int>((y - bbox.minY) / dy);

@@ -1,11 +1,225 @@
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/fixed_point_number.hpp"
+#include "pdnsol/utils/logging.hpp"
 
+#include <cmath>
 #include <stdexcept>
 #include <unordered_set>
 
 namespace pdnsol {
-const NodeMap& CircuitGraph::allNodes() const { return mNodes; }
+namespace {
+
+struct NodePair {
+    IdString a;
+    IdString b;
+
+    NodePair() = default;
+    NodePair(IdString n1, IdString n2) {
+        if (n1 < n2) {
+            a = n1;
+            b = n2;
+        } else {
+            a = n2;
+            b = n1;
+        }
+    }
+
+    bool operator==(const NodePair& other) const noexcept {
+        return a == other.a && b == other.b;
+    }
+};
+
+struct NodePairHash {
+    std::size_t operator()(const NodePair& p) const noexcept {
+        std::size_t h1 = IdString::Hash{}(p.a);
+        std::size_t h2 = IdString::Hash{}(p.b);
+        // Simple but decent hash combine
+        return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+    }
+};
+
+template <typename ResT>
+void mergeParallelResistors(std::vector<ResT>& resVec) {
+    struct Agg {
+        double Gsum    = 0.0; // sum of conductances
+        bool   hasZero = false;
+        ResT   exemplar{}; // to preserve some metadata if desired
+        bool   hasExemplar = false;
+    };
+
+    std::unordered_map<NodePair, Agg, NodePairHash> table;
+    table.reserve(resVec.size());
+
+    for (const auto& r : resVec) {
+        if (r.mN1 == r.mN2) {
+            // Resistor from node to itself is useless in DC; drop it
+            continue;
+        }
+        NodePair key(r.mN1, r.mN2);
+        Agg&     agg = table[key];
+
+        if (!agg.hasExemplar) {
+            agg.exemplar    = r;
+            agg.hasExemplar = true;
+        }
+
+        if (r.mR == 0.0) {
+            // A 0-ohm short dominates anything in parallel
+            agg.hasZero = true;
+            agg.Gsum    = 0.0; // ignore other conductances
+        } else if (!agg.hasZero) {
+            agg.Gsum += 1.0 / r.mR;
+        }
+    }
+
+    resVec.clear();
+    resVec.reserve(table.size());
+
+    for (auto& kv : table) {
+        const NodePair& key = kv.first;
+        Agg&            agg = kv.second;
+
+        ResT merged = agg.exemplar; // start from exemplar to keep metadata
+        merged.mN1  = key.a;
+        merged.mN2  = key.b;
+
+        if (agg.hasZero) {
+            merged.mR = 0.0;
+        } else if (agg.Gsum > 0.0) {
+            merged.mR = 1.0 / agg.Gsum;
+        } else {
+            // No valid conductance accumulated: should only happen
+            // if everything was dropped; skip in that case.
+            continue;
+        }
+
+        resVec.push_back(std::move(merged));
+    }
+}
+
+void mergeParallelIsrcs(std::vector<Isrc>& isrcs, double absTol = 1e-18) {
+    struct Agg {
+        double Isigned =
+          0.0; // positive: a->b, negative: b->a, where (a,b) = NodePair
+        Isrc exemplar{};
+        bool hasExemplar = false;
+    };
+
+    std::unordered_map<NodePair, Agg, NodePairHash> table;
+    table.reserve(isrcs.size());
+
+    for (const auto& s : isrcs) {
+        if (s.mFromNode == s.mToNode) {
+            continue; // no effect
+        }
+
+        NodePair key(s.mFromNode, s.mToNode);
+        Agg&     agg = table[key];
+
+        if (!agg.hasExemplar) {
+            agg.exemplar    = s;
+            agg.hasExemplar = true;
+        }
+
+        // Determine orientation relative to canonical pair
+        double sign =
+          (key.a == s.mFromNode && key.b == s.mToNode) ? 1.0 : -1.0;
+        agg.Isigned += sign * s.mI;
+    }
+
+    isrcs.clear();
+
+    for (auto& kv : table) {
+        const NodePair& key = kv.first;
+        Agg&            agg = kv.second;
+
+        if (std::fabs(agg.Isigned) < absTol) {
+            // Net current cancels out
+            continue;
+        }
+
+        Isrc merged = agg.exemplar; // keep metadata
+        if (agg.Isigned >= 0.0) {
+            merged.mFromNode = key.a;
+            merged.mToNode   = key.b;
+            merged.mI        = agg.Isigned;
+        } else {
+            merged.mFromNode = key.b;
+            merged.mToNode   = key.a;
+            merged.mI        = -agg.Isigned;
+        }
+
+        isrcs.push_back(std::move(merged));
+    }
+}
+
+void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
+    struct Group {
+        bool   haveCanonical = false;
+        double Vcanon        = 0.0; // voltage from a->b (where (a,b)=NodePair)
+        Vsrc   representative{};
+        // We also store conflicting ones separately.
+        std::vector<Vsrc> conflicts;
+    };
+
+    std::unordered_map<NodePair, Group, NodePairHash> table;
+    table.reserve(vsrcs.size());
+
+    for (const auto& s : vsrcs) {
+        if (s.mFromNode == s.mToNode) {
+            continue; // no effect in DC
+        }
+
+        NodePair key(s.mFromNode, s.mToNode);
+        Group&   g = table[key];
+
+        // Voltage w.r.t canonical orientation
+        double Vcanon =
+          (key.a == s.mFromNode && key.b == s.mToNode) ? s.mV : -s.mV;
+
+        if (!g.haveCanonical) {
+            g.haveCanonical  = true;
+            g.Vcanon         = Vcanon;
+            g.representative = s;
+        } else {
+            if (std::fabs(Vcanon - g.Vcanon) <= eps) {
+                // Same constraint, redundant; drop it
+            } else {
+                // Different voltage between same nodes: keep as conflict
+                g.conflicts.push_back(s);
+            }
+        }
+    }
+
+    vsrcs.clear();
+    vsrcs.reserve(table.size()); // plus a few conflicts
+
+    for (auto& kv : table) {
+        Group& g = kv.second;
+        if (!g.haveCanonical) continue;
+
+        // Keep one representative
+        vsrcs.push_back(std::move(g.representative));
+
+        if (g.conflicts.empty()) {
+            continue;
+        }
+        PDN_WARNING("Conflicting vsrc representative from %d to %d",
+                    g.representative.mFromNode,
+                    g.representative.mToNode);
+        // And all conflicting ones, if any
+        for (auto& c : g.conflicts) {
+            vsrcs.push_back(std::move(c));
+            PDN_WARNING(
+              "Conflicting vsrc source from %d to %d", c.mFromNode, c.mToNode);
+        }
+    }
+}
+} // anonymous namespace
+
+const NodeMap& CircuitGraph::allNodes() const {
+    return mNodes;
+}
 
 Node& CircuitGraph::ensureNode(const IdString& name, int net,
                                std::optional<double> x,
@@ -24,21 +238,19 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     if (it != mNodes.end()) {
         Node& node = it->second;
         if (net && !node.mNet) node.mNet = net;
-        if (x && !node.mXMicros) node.mXMicros = FPN::toRep(*x);
-        if (y && !node.mYMicros) node.mYMicros = FPN::toRep(*y);
+        if (x && !node.mX) node.mX = FPN::toRep(*x);
+        if (y && !node.mY) node.mY = FPN::toRep(*y);
         return node;
     }
 
     Node newNode;
-    newNode.mName = name;
-    newNode.mNet = net;
-    newNode.mXMicros = x ? *x : -1;
-    newNode.mYMicros = y ? *y : -1;
+    newNode.mName      = name;
+    newNode.mNet       = net;
+    newNode.mX         = x ? *x : -1;
+    newNode.mY         = y ? *y : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
     return insertIt->second;
 }
-
-std::size_t CircuitGraph::countVoltageSources() const { return mVsrcs.size(); }
 
 void CircuitGraph::ensureAllReferencedNodesExist() {
     std::unordered_set<IdString, IdString::Hash> names;
@@ -75,7 +287,9 @@ void CircuitGraph::ensureAllReferencedNodesExist() {
     }
     // Always ensure ground marker exists if referenced by any element
     if (names.count(IdString("GND")) == 0) {
-        if (refersToGround()) { ensureNode(IdString("GND")); }
+        if (refersToGround()) {
+            ensureNode(IdString("GND"));
+        }
     }
 }
 
@@ -95,7 +309,7 @@ bool CircuitGraph::refersToGround() const {
 }
 
 void CircuitGraph::validateReadyForMna() const {
-    if (countVoltageSources() == 0) {
+    if (mVsrcs.empty()) {
         throw std::runtime_error(
           "No voltage sources found. PDN DC solve requires at least one "
           "voltage source (e.g., VDD or via 0V sources).");
@@ -115,5 +329,18 @@ void CircuitGraph::validateReadyForMna() const {
         checkR(res.mName, res.mR);
     for (const auto& res : mPkgResistors)
         checkR(res.mName, res.mR);
+}
+
+void CircuitGraph::purge_parallel_elements() {
+    // 1. Resistive network (metal, via, package)
+    mergeParallelResistors(mMetalResistors);
+    mergeParallelResistors(mViaResistors);
+    mergeParallelResistors(mPkgResistors);
+
+    // 2. Current sources
+    mergeParallelIsrcs(mIsrcs);
+
+    // 3. Voltage sources
+    dedupVsrcs(mVsrcs);
 }
 } // namespace pdnsol

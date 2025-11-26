@@ -4,11 +4,11 @@ cmake_minimum_required(VERSION 3.22)
 include(cmake/prelude.cmake)
 
 project(
-  PdnSol
-  VERSION 0.1.0
-  DESCRIPTION "Test repository for project utilities"
-  HOMEPAGE_URL ""
-  LANGUAGES C CXX)
+    PdnSol
+    VERSION 0.1.0
+    DESCRIPTION "Test repository for project utilities"
+    HOMEPAGE_URL ""
+    LANGUAGES C CXX)
 
 include(cmake/project-is-top-level.cmake)
 include(cmake/variables.cmake)
@@ -26,42 +26,54 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(cmake/find-3rdparty.cmake)
 
 # ---- Declare library ----
+# I. util_lib
 
 add_library(
-  PdnSol_lib OBJECT
-  src/utils/logging.cpp
-  src/utils/id_string.cpp
-  src/utils/perf_stats.cpp
-  src/utils/fixed_point_number.cpp
-  src/io/parser_def.cpp
-  src/io/parser_utils.cpp
-  src/io/parser_spice.cpp
-  src/io/parser_spef.cpp
-  src/viz/heatmap.cpp
-  src/struct/circuit.cpp
-  src/solver/mna.cpp
-  src/solver/solver_basic.cpp)
+    util_lib STATIC src/utils/logging.cpp src/utils/id_string.cpp
+                    src/utils/perf_stats.cpp src/utils/fixed_point_number.cpp)
+target_link_libraries(util_lib PRIVATE plog::plog)
+target_include_directories(util_lib PRIVATE ${PROJECT_SOURCE_DIR}/include)
+target_compile_features(util_lib PRIVATE cxx_std_20)
 
-target_include_directories(PdnSol_lib PUBLIC ${PROJECT_SOURCE_DIR}/include
+# II. pdnsol_lib
+
+add_library(
+    pdnsol_lib STATIC
+    src/io/parser_utils.cpp
+    src/io/parser_spice.cpp
+    src/io/parser_spef.cpp
+    src/viz/heatmap.cpp
+    src/struct/circuit.cpp
+    src/solver/mna.cpp
+    src/solver/circuit_coarsener.cpp
+    src/solver/solver_basic.cpp)
+
+target_include_directories(pdnsol_lib PUBLIC ${PROJECT_SOURCE_DIR}/include
                                              ${PROJECT_BINARY_DIR})
+target_link_libraries(pdnsol_lib PUBLIC fmt::fmt Eigen3::Eigen util_lib)
+target_compile_features(pdnsol_lib PUBLIC cxx_std_20)
 
-target_link_libraries(PdnSol_lib PUBLIC fmt::fmt plog::plog Eigen3::Eigen)
-target_compile_features(PdnSol_lib PUBLIC cxx_std_20)
+# III. ohmify_lib
+
+add_library(ohmify_lib STATIC src/io/parser_def.cpp)
+target_include_directories(ohmify_lib PUBLIC ${PROJECT_SOURCE_DIR}/include)
+target_link_libraries(ohmify_lib PUBLIC util_lib)
+target_compile_features(ohmify_lib PUBLIC cxx_std_20)
 
 # ---- Declare executable ----
 
-add_executable(PdnSol_exe src/main.cpp)
-add_executable(PdnSol::exe ALIAS PdnSol_exe)
+add_executable(pdnsol_exe src/main.cpp)
+add_executable(pdnsol::exe ALIAS pdnsol_exe)
 
 set_target_properties(
-  PdnSol_exe
-  PROPERTIES LINK_FLAGS -no-pie
-             OUTPUT_NAME PdnSol
-             EXPORT_NAME exe)
+    pdnsol_exe
+    PROPERTIES LINK_FLAGS -no-pie
+               OUTPUT_NAME pdnsol
+               EXPORT_NAME exe)
 
-target_compile_features(PdnSol_exe PRIVATE cxx_std_20)
-target_link_libraries(PdnSol_exe PRIVATE PdnSol_lib CLI11::CLI11)
-# target_include_directories(PdnSol_exe PRIVATE ${PROJECT_SOURCE_DIR}/src)
+target_compile_features(pdnsol_exe PRIVATE cxx_std_20)
+target_link_libraries(pdnsol_exe PRIVATE pdnsol_lib CLI11::CLI11)
+# target_include_directories(pdnsol_exe PRIVATE ${PROJECT_SOURCE_DIR}/src)
 
 # ---- Install rules ----
 
@@ -70,13 +82,14 @@ target_link_libraries(PdnSol_exe PRIVATE PdnSol_lib CLI11::CLI11)
 
 # ---- Unit Tests ----
 if(PDN_SOL_BUILD_TESTING)
-  message("Entering test...")
-  add_subdirectory(test)
+    message("Entering test...")
+    add_subdirectory(test)
 endif()
 
 # ---- Developer mode ----
-if(NOT PdnSol_DEVELOPER_MODE)
-  return()
+if(NOT PDN_SOL_DEVELOPER_MODE)
+    return()
 elseif(NOT PROJECT_IS_TOP_LEVEL)
-  message(AUTHOR_WARNING "Developer mode is intended for developers of PdnSol")
+    message(
+        AUTHOR_WARNING "Developer mode is intended for developers of PdnSol")
 endif()
