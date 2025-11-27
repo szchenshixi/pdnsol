@@ -21,9 +21,7 @@ CircuitGraph CircuitCoarsener::build() {
     out.mMetadata       = mIn.mMetadata;
     out.mSections       = mIn.mSections; // logical PDN description is reused
 
-    if (mIn.mNodes.empty()) {
-        return out; // trivial
-    }
+    if (mIn.mNodes.empty()) return out; // trivial
 
     mOutPtr = &out;
 
@@ -53,17 +51,14 @@ void CircuitCoarsener::computeBoundingBox() {
     bool first = true;
     for (const auto& kv : mIn.mNodes) {
         const Node& n = kv.second;
-        if (n.mX < 0 || n.mY < 0)
-            continue;
+        if (n.mX < 0 || n.mY < 0) continue;
         if (first) {
             mMinX = n.mX;
             mMinY = n.mY;
             first = false;
         } else {
-            if (n.mX < mMinX)
-                mMinX = n.mX;
-            if (n.mY < mMinY)
-                mMinY = n.mY;
+            if (n.mX < mMinX) mMinX = n.mX;
+            if (n.mY < mMinY) mMinY = n.mY;
         }
     }
 }
@@ -317,9 +312,7 @@ void CircuitCoarsener::buildPkgResistors() {
         IdString n1 = mapNode(p.mN1);
         IdString n2 = mapNode(p.mN2);
 
-        if (n1 == n2) {
-            continue;
-        }
+        if (n1 == n2) continue;
 
         PkgRes cp = p;
         cp.mN1    = n1;

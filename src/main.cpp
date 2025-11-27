@@ -34,7 +34,7 @@ int main() {
     // 1. Prepare the circuits
     CircuitGraph fcirc =
       parseSpiceFile("/home/szchenshixi/git_repository/pdnsol_cpp/test/data/"
-                     "ibmpg/6/ibmpg6.spice");
+                     "ibmpg/1/ibmpg1.spice");
     // CircuitGraph
     CoarseModelConfig cfg;
     cfg.tileSizeUm = 100.0;
@@ -54,10 +54,12 @@ int main() {
 
     CircuitCoarsener coarsener(fcirc, cfg);
     CircuitGraph     ccirc = coarsener.build();
+    ccirc.purge_parallel_elements();
 
     {
         PERF_STATS("Profiling full circuit");
-        PDN_INFO("Starting profiling full circuit");
+        PDN_INFO("Starting profiling full circuit with %'d",
+                 fcirc.allNodes().size());
         // 2. Solve the MNA system
         MNASystem    fmna = assembleMNA(fcirc);
         MNASolution  fsol = solveMNA(fmna);
@@ -70,7 +72,8 @@ int main() {
 
     {
         PERF_STATS("Profiling coarse circuit");
-        PDN_INFO("Starting profiling coarse circuit");
+        PDN_INFO("Starting profiling coarse circuit with %'d",
+                 ccirc.allNodes().size());
         // 2. Solve the MNA system
         MNASystem    cmna = assembleMNA(ccirc);
         MNASolution  csol = solveMNA(cmna);

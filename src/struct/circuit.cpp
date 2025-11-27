@@ -204,14 +204,17 @@ void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
         if (g.conflicts.empty()) {
             continue;
         }
-        PDN_WARNING("Conflicting vsrc representative from %d to %d",
-                    g.representative.mFromNode,
-                    g.representative.mToNode);
+        PDN_WARNING("Conflicting vsrc representative from %s to %s %.2fV",
+                    g.representative.mFromNode.c_str(),
+                    g.representative.mToNode.c_str(),
+                    g.representative.mV);
         // And all conflicting ones, if any
         for (auto& c : g.conflicts) {
             vsrcs.push_back(std::move(c));
-            PDN_WARNING(
-              "Conflicting vsrc source from %d to %d", c.mFromNode, c.mToNode);
+            PDN_WARNING("Conflicting vsrc source from %s to %s %.2fV",
+                        c.mFromNode.c_str(),
+                        c.mToNode.c_str(),
+                        c.mV);
         }
     }
 }
@@ -246,8 +249,8 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     Node newNode;
     newNode.mName      = name;
     newNode.mNet       = net;
-    newNode.mX         = x ? *x : -1;
-    newNode.mY         = y ? *y : -1;
+    newNode.mX         = x ? FPN::toRep(*x) : -1;
+    newNode.mY         = y ? FPN::toRep(*y) : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
     return insertIt->second;
 }

@@ -36,7 +36,7 @@ ProgramStats::~ProgramStats() {
     const double maxRssMb = getMaxRssMb();
 
     // [label] wall_time=...s cpu_time=...s peakMemUsage=...MB
-    PDN_INFO("[%s] wall_time=%.3fs cpu_time=%.3fs peakMemUsage=%.1fMB\n",
+    PDN_INFO("[%s] wall_time=%.3fs cpu_time=%.3fs peakMemUsage=%.1fMB",
             mLabel,
             wallSec,
             cpuSec,
