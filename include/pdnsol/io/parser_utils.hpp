@@ -17,21 +17,25 @@ std::string ltrim(const std::string& s);
 std::string rtrim(const std::string& s);
 std::string trim(const std::string& s);
 std::string toLower(std::string s);
-bool iequals(const std::string& a, const std::string& b);
+bool        iequals(const std::string& a, const std::string& b);
 bool startsWithIgnoreCase(const std::string& s, const std::string& prefix);
 
 std::vector<std::string> splitWhitespace(const std::string& line);
 std::vector<std::string> splitOnChar(const std::string& s, char delim);
+template <typename T>
+static inline T clamp(T v, T lo, T hi) {
+    return std::max(lo, std::min(hi, v));
+}
 
 // -------------------------
 // Node name parsing for PDN
 // -------------------------
 
 struct ParsedNode {
-    IdString mId;      // canonical node id (with GND mapping)
-    int32_t mNet = -1; // e.g. from "n<net>_x_y"
-    double mXMicros;   // in micrometers
-    double mYMicros;   // in micrometers
+    IdString mId;       // canonical node id (with GND mapping)
+    int32_t  mNet = -1; // e.g. from "n<net>_x_y"
+    double   mXMicros;  // in micrometers
+    double   mYMicros;  // in micrometers
 };
 
 // Map a node name to ParsedNode, using your PDN convention:

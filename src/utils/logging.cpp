@@ -19,7 +19,9 @@ Logger& Logger::instance() {
 void Logger::init(Level level, const std::string& logPath, size_t maxFileSize,
                   int maxFiles, bool enableConsole) {
     std::lock_guard<std::mutex> lock(mMutex);
-    if (mInitialized) { return; }
+    if (mInitialized) {
+        return;
+    }
 
     static plog::RollingFileAppender<plog::TxtFormatter> fileAppender(
       logPath.c_str(), maxFileSize, maxFiles);
@@ -32,13 +34,16 @@ void Logger::init(Level level, const std::string& logPath, size_t maxFileSize,
     } else {
         plog::init(static_cast<plog::Severity>(level), &fileAppender);
     }
+    std::setlocale(LC_ALL, ""); // for "%'d" format string, e.g., 12,345
 
     mInitialized = true;
 }
 
 void Logger::log(Level level, const char* file, int line, const char* function,
                  const char* format, ...) const {
-    if (!mInitialized) { return; }
+    if (!mInitialized) {
+        return;
+    }
     va_list args;
     va_start(args, format);
 
@@ -48,7 +53,9 @@ void Logger::log(Level level, const char* file, int line, const char* function,
     int length = vsnprintf(nullptr, 0, format, argsCopy);
     va_end(argsCopy);
 
-    if (length <= 0) { return; }
+    if (length <= 0) {
+        return;
+    }
 
     std::vector<char> buf(length + 1);
     vsnprintf(buf.data(), buf.size(), format, args);
