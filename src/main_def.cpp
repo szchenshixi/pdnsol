@@ -11,28 +11,43 @@ int main(int argc, char** argv) {
     }
     std::string defPath = argv[1];
 
-    // 1) Technology setup
+    // ============================================================
+    // 1) Technology Database Setup
+    // ============================================================
     TechDatabase techDb;
 
-    // NOTE: Use realistic values from your process.
-    // Resistivity in Ω·µm, thickness in µm.
-    techDb.addLayer("M3", 0.02, 0.4);
-    techDb.addLayer("M4", 0.02, 0.4);
-    techDb.addLayer("M5", 0.02, 0.6);
+    // Metal Layers - Add ALL layers from DEF
+    // Format: addLayer(layer_name, resistivity_Ω·µm, thickness_µm)
+    techDb.addLayer("met1", 0.0300, 0.2000);
+    techDb.addLayer("met2", 0.0300, 0.2000);
+    techDb.addLayer("met3", 0.0300, 0.2000);
+    techDb.addLayer("met4", 0.0200, 0.4000);
+    techDb.addLayer("met5", 0.0200, 0.4000);
 
-    // Example via types (resistances are dummy values)
-    techDb.addVia("VIA34", "M3", "M4", 0.001); // 1 mΩ
-    techDb.addVia("VIA45", "M4", "M5", 0.001);
+    // Vias - Add ALL vias from DEF VIAS section
+    // Format: addVia(via_name, bottom_layer, top_layer, resistance_Ω)
+    techDb.addVia("via_1600x480", "met1", "met2", 0.000100);   // 150x150
+    techDb.addVia("via2_1600x480", "met2", "met3", 0.000100);  // 200x200
+    techDb.addVia("via3_1600x480", "met3", "met4", 0.000100);  // 200x200
+    techDb.addVia("via4_1600x1600", "met4", "met5", 0.000100); // 800x800
 
-    // Example TSV type (extension point)
-    techDb.addTsv("TSV_TOP", "M5", "M5", 0.01); // e.g., to backside
+    // Additional via types (if not in DEF)
+    // techDb.addVia("custom_via", "met1", "met2", 0.001);
 
-    // 2) PDN nets and layers
-    std::vector<std::string> powerNets  = {"VDD"};
+    // ============================================================
+    // 2) PDN Configuration
+    // ============================================================
+
+    // Power nets from SPECIALNETS section
+    std::vector<std::string> powerNets = {"VDD"};
+
+    // Ground nets from SPECIALNETS section
     std::vector<std::string> groundNets = {"VSS"};
 
-    // Order of metal layers from bottom to top in PDN modeling
-    std::vector<std::string> layerOrder = {"M3", "M4", "M5"};
+    // Metal layer order (bottom to top)
+    // Includes ALL metal layers from via definitions
+    std::vector<std::string> layerOrder = {
+      "met1", "met2", "met3", "met4", "met5"};
 
     int    gridNx      = 64;
     int    gridNy      = 64;

@@ -106,6 +106,27 @@ struct TechTsv {
     double   resistance; // Ohms per TSV
 };
 
+struct TechViaGeom {
+    IdString name;
+    IdString viaRuleName;
+
+    IdString bottomLayer;
+    IdString cutLayer;
+    IdString topLayer;
+
+    // All geometry values are in DEF DBU units
+    int cutSizeX         = 0;
+    int cutSizeY         = 0;
+    int cutSpacingX      = 0;
+    int cutSpacingY      = 0;
+    int enclosureBottomX = 0; // overhang on bottom layer, x-direction
+    int enclosureBottomY = 0; // overhang on bottom layer, y-direction
+    int enclosureTopX    = 0; // overhang on top layer, x-direction
+    int enclosureTopY    = 0; // overhang on top layer, y-direction
+    int rows             = 1; // ROWCOL
+    int cols             = 1; // ROWCOL
+};
+
 class TechDatabase {
   public:
     // Metal layers
@@ -154,10 +175,86 @@ class TechDatabase {
         return &it->second;
     }
 
+    // Via geometry from DEF "VIAS" section
+    void addViaGeometryFromDef(
+      std::string_view viaName, std::string_view viaRuleName,
+      std::string_view bottomLayer, std::string_view cutLayer,
+      std::string_view topLayer, int cutSizeX, int cutSizeY, int cutSpacingX,
+      int cutSpacingY, int enclosureBottomX, int enclosureBottomY,
+      int enclosureTopX, int enclosureTopY, int rows, int cols) {
+        IdString viaId(viaName);
+
+        TechViaGeom g;
+        g.name             = viaId;
+        g.viaRuleName      = IdString(viaRuleName);
+        g.bottomLayer      = IdString(bottomLayer);
+        g.cutLayer         = IdString(cutLayer);
+        g.topLayer         = IdString(topLayer);
+        g.cutSizeX         = cutSizeX;
+        g.cutSizeY         = cutSizeY;
+        g.cutSpacingX      = cutSpacingX;
+        g.cutSpacingY      = cutSpacingY;
+        g.enclosureBottomX = enclosureBottomX;
+        g.enclosureBottomY = enclosureBottomY;
+        g.enclosureTopX    = enclosureTopX;
+        g.enclosureTopY    = enclosureTopY;
+        g.rows             = rows;
+        g.cols             = cols;
+
+        mViaGeometries[viaId] = g;
+
+        // Make sure basic via connectivity exists as TechVia as well.
+        auto it = mVias.find(viaId);
+        if (it == mVias.end()) {
+            TechVia v;
+            v.name        = viaId;
+            v.bottomLayer = g.bottomLayer;
+            v.topLayer    = g.topLayer;
+            v.resistance  = 0.0; // placeholder, can be filled separately
+            mVias.emplace(viaId, v);
+        } else {
+            // Keep connectivity consistent if already present
+            it->second.bottomLayer = g.bottomLayer;
+            it->second.topLayer    = g.topLayer;
+        }
+    }
+
+    const TechViaGeom* getViaGeometry(IdString viaName) const {
+        auto it = mViaGeometries.find(viaName);
+        if (it == mViaGeometries.end()) return nullptr;
+        return &it->second;
+    }
+
+    // TSV geometry extension point (minimal, but allows you to fill later)
+    struct TechTsvGeom {
+        IdString name;
+        double   diameter_um = 0.0;
+        double   height_um   = 0.0;
+    };
+
+    void addTsvGeometry(std::string_view tsvName, double diameter_um,
+                        double height_um) {
+        IdString    id(tsvName);
+        TechTsvGeom g;
+        g.name             = id;
+        g.diameter_um      = diameter_um;
+        g.height_um        = height_um;
+        mTsvGeometries[id] = g;
+    }
+
+    const TechTsvGeom* getTsvGeometry(IdString tsvName) const {
+        auto it = mTsvGeometries.find(IdString(tsvName));
+        if (it == mTsvGeometries.end()) return nullptr;
+        return &it->second;
+    }
+
   private:
     std::unordered_map<IdString, TechLayer, IdString::Hash> mLayers;
     std::unordered_map<IdString, TechVia, IdString::Hash>   mVias;
     std::unordered_map<IdString, TechTsv, IdString::Hash>   mTsvs;
+
+    std::unordered_map<IdString, TechViaGeom, IdString::Hash> mViaGeometries;
+    std::unordered_map<IdString, TechTsvGeom, IdString::Hash> mTsvGeometries;
 };
 
 // -----------------------------------------------------------------------------
@@ -253,7 +350,7 @@ struct Bump {
 
 class CoarsePdnBuilder3D {
   public:
-    CoarsePdnBuilder3D(const TechDatabase& techDb, int gridNx, int gridNy,
+    CoarsePdnBuilder3D(TechDatabase& techDb, int gridNx, int gridNy,
                        const std::vector<std::string>& powerNetNames,
                        const std::vector<std::string>& groundNetNames,
                        const std::vector<std::string>& layerOrder,
@@ -450,9 +547,76 @@ class CoarsePdnBuilder3D {
     }
 
     // ---------------------------------------------------------------------
+    // Helpers for SPECIALNETS routing
+    // ---------------------------------------------------------------------
+
+    // Parse a DEF point: "( x y )"
+    // Supports '*' meaning "same as previous value" on that axis.
+    static bool parseDefPoint(const std::vector<std::string>& tokens,
+                              size_t startIdx, int prevX, int prevY, int& x,
+                              int& y, size_t& consumed) {
+        consumed       = 0;
+        const size_t n = tokens.size();
+        if (startIdx + 3 >= n) return false;
+        if (tokens[startIdx] != "(") return false;
+        if (tokens[startIdx + 3] != ")") return false;
+
+        const std::string& xs = tokens[startIdx + 1];
+        const std::string& ys = tokens[startIdx + 2];
+
+        if (xs == "*") {
+            x = prevX;
+        } else if (!parseIntSafe(xs, x)) {
+            return false;
+        }
+
+        if (ys == "*") {
+            y = prevY;
+        } else if (!parseIntSafe(ys, y)) {
+            return false;
+        }
+
+        consumed = 4; // "(", x, y, ")"
+        return true;
+    }
+
+    // Convert a routed segment into a rectangle and feed it into the
+    // existing rectangle-based PDN builder.
+    // widthDbu is the wire width from "ROUTED/NEW" (in DBU).
+    void addStripeFromSegment(const std::string& netName,
+                              const std::string& layerName, int x0, int y0,
+                              int x1, int y1, int widthDbu) {
+        if (widthDbu <= 0)
+            return; // degenerate: used e.g. for via points on met4 0
+
+        const int half = widthDbu / 2;
+
+        if (x0 == x1) {
+            // Vertical stripe
+            int yMin = std::min(y0, y1);
+            int yMax = std::max(y0, y1);
+            addStripeRectangle(
+              netName, layerName, x0 - half, yMin, x0 + half, yMax);
+        } else if (y0 == y1) {
+            // Horizontal stripe
+            int xMin = std::min(x0, x1);
+            int xMax = std::max(x0, x1);
+            addStripeRectangle(
+              netName, layerName, xMin, y0 - half, xMax, y0 + half);
+        } else {
+            // Non-Manhattan (unlikely in PDN); fall back to bounding box.
+            int xMin = std::min(x0, x1);
+            int xMax = std::max(x0, x1);
+            int yMin = std::min(y0, y1);
+            int yMax = std::max(y0, y1);
+            addStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
+        }
+    }
+
+    // ---------------------------------------------------------------------
     // DEF parsing: PDN stripes, vias, and bumps
     // ---------------------------------------------------------------------
-    enum class Section { NONE, SPECIALNETS, PINS };
+    enum class Section { NONE, SPECIALNETS, PINS, VIAS };
 
     bool parseDefPdnAndBumps(const std::string& defPath) {
         std::ifstream fin(defPath);
@@ -466,8 +630,7 @@ class CoarsePdnBuilder3D {
         std::string currentNetName;
         bool        currentNetIsPdn = false;
         std::string currentLayerName; // updated by "ROUTED <layer>"
-
-        SpecialNetRouteState routeState; // routing context across SPECIALNETS
+        int currentRouteWidthDbu = 0; // NEW: track width from "ROUTED/NEW"
 
         std::string line;
         while (std::getline(fin, line)) {
@@ -480,7 +643,7 @@ class CoarsePdnBuilder3D {
                 currentNetName.clear();
                 currentNetIsPdn = false;
                 currentLayerName.clear();
-                routeState = SpecialNetRouteState{};
+                currentRouteWidthDbu = 0;
                 continue;
             }
             if (startsWithIgnoreCase(tline, "END SPECIALNETS")) {
@@ -488,19 +651,28 @@ class CoarsePdnBuilder3D {
                 currentNetName.clear();
                 currentNetIsPdn = false;
                 currentLayerName.clear();
-                routeState = SpecialNetRouteState{};
+                currentRouteWidthDbu = 0;
                 continue;
             }
+
+            // NEW: VIAS section
+            if (startsWithIgnoreCase(tline, "VIAS")) {
+                section = Section::VIAS;
+                continue;
+            }
+            if (startsWithIgnoreCase(tline, "END VIAS")) {
+                section = Section::NONE;
+                continue;
+            }
+
             if (startsWithIgnoreCase(tline, "PINS")) {
                 section = Section::PINS;
                 mPinParseState.reset();
-                routeState = SpecialNetRouteState{};
                 continue;
             }
             if (startsWithIgnoreCase(tline, "END PINS")) {
                 section = Section::NONE;
                 mPinParseState.reset();
-                routeState = SpecialNetRouteState{};
                 continue;
             }
 
@@ -510,9 +682,10 @@ class CoarsePdnBuilder3D {
                                       currentNetName,
                                       currentNetIsPdn,
                                       currentLayerName,
-                                      routeState);
+                                      currentRouteWidthDbu);
                 break;
             case Section::PINS: handlePinsLine(tline); break;
+            case Section::VIAS: handleViasLine(tline); break;
             default: break;
             }
         }
@@ -520,11 +693,11 @@ class CoarsePdnBuilder3D {
         return true;
     }
 
-    void
-    handleSpecialNetsLine(const std::string& line, std::string& currentNetName,
-                          bool& currentNetIsPdn, std::string& currentLayerName,
-                          SpecialNetRouteState& routeState) // NEW param
-    {
+    void handleSpecialNetsLine(const std::string& line,
+                               std::string&       currentNetName,
+                               bool&              currentNetIsPdn,
+                               std::string&       currentLayerName,
+                               int&               currentRouteWidthDbu) {
         std::vector<std::string> tokens = tokenizeDef(line);
         if (tokens.empty()) return;
 
@@ -532,6 +705,7 @@ class CoarsePdnBuilder3D {
         if (tokens[0] == "-") {
             if (tokens.size() >= 2) {
                 currentNetName = stripDefQuotes(tokens[1]);
+
                 auto it = mNetByName.find(IdString::tryLookup(currentNetName));
                 currentNetIsPdn = (it != mNetByName.end());
             } else {
@@ -539,8 +713,7 @@ class CoarsePdnBuilder3D {
                 currentNetIsPdn = false;
             }
             currentLayerName.clear();
-            routeState =
-              SpecialNetRouteState{}; // reset routing context for new net
+            currentRouteWidthDbu = 0;
             return;
         }
 
@@ -549,66 +722,13 @@ class CoarsePdnBuilder3D {
             return;
         }
 
-        // Helper: convert a centerline segment + width into a rectangle
-        auto addStripeSegmentAsRect = [this](const std::string& netName,
-                                             const std::string& layerName,
-                                             int                x1,
-                                             int                y1,
-                                             int                x2,
-                                             int                y2,
-                                             int                widthDbu) {
-            if (widthDbu <= 0) return;
-            if (x1 == x2 && y1 == y2) return;
-
-            int xMin = std::min(x1, x2);
-            int xMax = std::max(x1, x2);
-            int yMin = std::min(y1, y2);
-            int yMax = std::max(y1, y2);
-
-            const int halfLo = widthDbu / 2;
-            const int halfHi = widthDbu - halfLo;
-
-            int rx0, ry0, rx1, ry1;
-            if (y1 == y2) {
-                // Horizontal stripe
-                rx0 = xMin;
-                rx1 = xMax;
-                ry0 = y1 - halfLo;
-                ry1 = y1 + halfHi;
-            } else if (x1 == x2) {
-                // Vertical stripe
-                rx0 = x1 - halfLo;
-                rx1 = x1 + halfHi;
-                ry0 = yMin;
-                ry1 = yMax;
-            } else {
-                // Non-Manhattan: conservative bounding box + halo
-                rx0 = xMin - halfLo;
-                rx1 = xMax + halfHi;
-                ry0 = yMin - halfLo;
-                ry1 = yMax + halfHi;
-            }
-
-            addStripeRectangle(netName, layerName, rx0, ry0, rx1, ry1);
-        };
-
-        // Helper: heuristic to decide if a token looks like a via name
-        auto looksLikeViaName = [](const std::string& t) {
-            if (t.empty()) return false;
-            if (t == "+" || t == "(" || t == ")" || t == "ROUTED" ||
-                t == "NEW" || t == "FIXED" || t == "COVER" || t == "LAYER" ||
-                t == "WIDTH" || t == "SHAPE" || t == "RECT" || t == "VIA" ||
-                t == "MASK" || t == "STYLE" || t == "USE" || t == "NET") {
-                return false;
-            }
-            int dummy = 0;
-            if (parseIntSafe(t, dummy))
-                return false; // numeric => not via name
-            return true;
-        };
-
         size_t       i = 0;
         const size_t n = tokens.size();
+
+        int  lastX         = 0;
+        int  lastY         = 0;
+        bool haveLastPoint = false;
+        bool inShapeBlock  = false; // Track if we're in a + SHAPE ... block
 
         while (i < n) {
             const std::string& tok = tokens[i];
@@ -618,139 +738,210 @@ class CoarsePdnBuilder3D {
                 continue;
             }
 
-            // Start of a routing statement within the special net
-            if (tok == "ROUTED" || tok == "NEW" || tok == "FIXED" ||
-                tok == "COVER") {
-                routeState.inRoute        = true;
-                routeState.prevPointValid = false;
-                routeState.shape.clear();
-                routeState.widthDbu = 0;
-
+            // ROUTED or NEW statement
+            if (tok == "ROUTED" || tok == "NEW") {
                 ++i;
-                // Skip additional '+'
-                while (i < n && tokens[i] == "+") {
-                    ++i;
-                }
-                // Layer name
-                if (i < n && tokens[i] != "(" && tokens[i] != ")") {
-                    currentLayerName = tokens[i];
-                    ++i;
-                }
-                // Optional width right after the layer
                 if (i < n) {
-                    int w = 0;
-                    if (parseIntSafe(tokens[i], w)) {
-                        routeState.widthDbu = w;
+                    currentLayerName = tokens[i++];
+                } else {
+                    break;
+                }
+
+                // Optional width
+                currentRouteWidthDbu = 0;
+                if (i < n) {
+                    int width = 0;
+                    if (parseIntSafe(tokens[i], width)) {
+                        currentRouteWidthDbu = width;
                         ++i;
                     }
                 }
-                continue;
-            } else if (tok == "LAYER") {
-                // Explicit LAYER arc within the net
-                ++i;
-                if (i < n) {
-                    currentLayerName = tokens[i];
+
+                haveLastPoint = false;
+                inShapeBlock  = false; // Reset shape block flag
+
+                // Check if the next token is "+" followed by "SHAPE"
+                if (i < n && tokens[i] == "+") {
                     ++i;
-                }
-                continue;
-            } else if (tok == "WIDTH") {
-                // WIDTH override inside the route
-                ++i;
-                if (i < n) {
-                    int w = 0;
-                    if (parseIntSafe(tokens[i], w)) {
-                        routeState.widthDbu = w;
+                    if (i < n && tokens[i] == "SHAPE") {
+                        inShapeBlock = true;
+                        ++i; // Skip SHAPE
                     }
-                    ++i;
-                }
-                continue;
-            } else if (tok == "SHAPE") {
-                // SHAPE STRIPE / FOLLOWPIN / RING / ...
-                ++i;
-                if (i < n) {
-                    routeState.shape = tokens[i];
-                    ++i;
-                }
-                continue;
-            } else if (tok == "RECT") {
-                // Legacy / explicit RECT handling (unchanged)
-                int    x0 = 0, y0 = 0, x1 = 0, y1 = 0;
-                size_t consumed = 0;
-                if (parseRectFromTokens(
-                      tokens, i + 1, x0, y0, x1, y1, consumed)) {
-                    if (!currentLayerName.empty()) {
-                        addStripeRectangle(
-                          currentNetName, currentLayerName, x0, y0, x1, y1);
-                    }
-                    i += 1 + consumed;
-                } else {
-                    ++i;
-                }
-                continue;
-            } else if (tok == "VIA") {
-                // Explicit VIA syntax: "VIA viaName ( x y )"
-                std::string viaName;
-                int         x = 0, y = 0;
-                size_t      consumed = 0;
-                if (parseViaFromTokens(
-                      tokens, i + 1, viaName, x, y, consumed)) {
-                    addViaInstance(currentNetName, viaName, x, y);
-                    i += 1 + consumed;
-                } else {
-                    ++i;
-                }
-                continue;
-            } else if (tok == "(") {
-                // Routed point: "( x y ) [viaName]"
-                if (i + 3 >= n) {
-                    ++i;
-                    continue;
-                }
-                int x = 0;
-                int y = 0;
-                if (!parseIntSafe(tokens[i + 1], x) ||
-                    !parseIntSafe(tokens[i + 2], y) || tokens[i + 3] != ")") {
-                    ++i;
-                    continue;
                 }
 
-                // If this is a STRIPE or FOLLOWPIN and we have width, emit
-                // stripe rects
-                if (routeState.inRoute && !currentLayerName.empty() &&
-                    (routeState.shape == "STRIPE" ||
-                     routeState.shape == "FOLLOWPIN") &&
-                    routeState.widthDbu > 0) {
-                    if (routeState.prevPointValid) {
-                        addStripeSegmentAsRect(currentNetName,
-                                               currentLayerName,
-                                               routeState.prevX,
-                                               routeState.prevY,
-                                               x,
-                                               y,
-                                               routeState.widthDbu);
+                // If not in a shape block, check for geometry directly
+                if (!inShapeBlock && i < n && tokens[i] == "(") {
+                    // Handle geometry directly without SHAPE keyword
+                    // Parse first point
+                    int    x0 = 0, y0 = 0;
+                    size_t consumed = 0;
+                    if (!parseDefPoint(tokens, i, 0, 0, x0, y0, consumed)) {
+                        break;
                     }
-                    routeState.prevPointValid = true;
-                    routeState.prevX          = x;
-                    routeState.prevY          = y;
-                }
+                    i += consumed;
 
-                // Check for a via immediately after the point: "( x y )
-                // viaName"
-                size_t j = i + 4;
-                while (j < n && tokens[j] == "+") {
-                    ++j;
-                }
-                if (j < n && looksLikeViaName(tokens[j])) {
-                    addViaInstance(currentNetName, tokens[j], x, y);
-                    ++j;
-                }
+                    // Check if this is a via instantiation or a wire
+                    if (i < n && tokens[i] != "(" && tokens[i] != "+" &&
+                        tokens[i] != ";") {
+                        // Via instantiation: (x y) viaName
+                        const std::string& viaName = tokens[i++];
+                        addViaInstance(currentNetName, viaName, x0, y0);
+                    } else if (i < n && tokens[i] == "(") {
+                        // Wire segment: (x0 y0) (x1 y1) ...
+                        int x1 = 0, y1 = 0;
+                        if (!parseDefPoint(
+                              tokens, i, x0, y0, x1, y1, consumed)) {
+                            break;
+                        }
+                        i += consumed;
 
-                i = j;
+                        if (!currentLayerName.empty() &&
+                            currentRouteWidthDbu > 0) {
+                            addStripeFromSegment(currentNetName,
+                                                 currentLayerName,
+                                                 x0,
+                                                 y0,
+                                                 x1,
+                                                 y1,
+                                                 currentRouteWidthDbu);
+                        }
+
+                        lastX         = x1;
+                        lastY         = y1;
+                        haveLastPoint = true;
+
+                        // Additional segments
+                        while (i < n && tokens[i] == "(") {
+                            int x2 = 0, y2 = 0;
+                            if (!parseDefPoint(
+                                  tokens, i, lastX, lastY, x2, y2, consumed)) {
+                                break;
+                            }
+                            i += consumed;
+
+                            if (!currentLayerName.empty() &&
+                                currentRouteWidthDbu > 0) {
+                                addStripeFromSegment(currentNetName,
+                                                     currentLayerName,
+                                                     lastX,
+                                                     lastY,
+                                                     x2,
+                                                     y2,
+                                                     currentRouteWidthDbu);
+                            }
+
+                            lastX = x2;
+                            lastY = y2;
+                        }
+                    }
+                }
                 continue;
-            } else {
-                // Ignore other keywords (USE, SOURCE, TAPERRULE, etc.) for now
-                ++i;
             }
+
+            // If we're in a SHAPE block, handle its contents
+            if (inShapeBlock) {
+                // SHAPE type (STRIPE, FOLLOWPIN, etc.)
+                if (tokens[i] == "STRIPE" || tokens[i] == "FOLLOWPIN" ||
+                    tokens[i] == "RING" || tokens[i] == "PADRING") {
+                    const std::string& shapeType = tokens[i++];
+
+                    // Geometry comes right after shape type
+                    if (i >= n || tokens[i] != "(") {
+                        continue;
+                    }
+
+                    // First point
+                    int    x0 = 0, y0 = 0;
+                    size_t consumed = 0;
+                    if (!parseDefPoint(tokens,
+                                       i,
+                                       haveLastPoint ? lastX : 0,
+                                       haveLastPoint ? lastY : 0,
+                                       x0,
+                                       y0,
+                                       consumed)) {
+                        break;
+                    }
+                    i += consumed;
+
+                    // Case 1: via instantiation: (x y) <viaName>
+                    if (i < n && tokens[i] != "(" && tokens[i] != "+" &&
+                        tokens[i] != ";") {
+                        const std::string& viaName = tokens[i++];
+                        addViaInstance(currentNetName, viaName, x0, y0);
+                        inShapeBlock = false; // End of shape block
+                        continue;
+                    }
+
+                    // Case 2: wire segments
+                    if (i < n && tokens[i] == "(") {
+                        int x1 = 0, y1 = 0;
+                        if (!parseDefPoint(
+                              tokens, i, x0, y0, x1, y1, consumed)) {
+                            break;
+                        }
+                        i += consumed;
+
+                        if (!currentLayerName.empty() &&
+                            currentRouteWidthDbu > 0) {
+                            addStripeFromSegment(currentNetName,
+                                                 currentLayerName,
+                                                 x0,
+                                                 y0,
+                                                 x1,
+                                                 y1,
+                                                 currentRouteWidthDbu);
+                        }
+
+                        lastX         = x1;
+                        lastY         = y1;
+                        haveLastPoint = true;
+
+                        // Additional segments
+                        while (i < n && tokens[i] == "(") {
+                            int x2 = 0, y2 = 0;
+                            if (!parseDefPoint(
+                                  tokens, i, lastX, lastY, x2, y2, consumed)) {
+                                break;
+                            }
+                            i += consumed;
+
+                            if (!currentLayerName.empty() &&
+                                currentRouteWidthDbu > 0) {
+                                addStripeFromSegment(currentNetName,
+                                                     currentLayerName,
+                                                     lastX,
+                                                     lastY,
+                                                     x2,
+                                                     y2,
+                                                     currentRouteWidthDbu);
+                            }
+
+                            lastX = x2;
+                            lastY = y2;
+                        }
+                    }
+
+                    inShapeBlock = false; // End of shape block
+                    continue;
+                }
+
+                // If we're still in shape block but didn't match a shape type,
+                // something is wrong - exit shape block
+                inShapeBlock = false;
+            }
+
+            // Optional "LAYER <name>" override (outside shape blocks)
+            if (tok == "LAYER") {
+                ++i;
+                if (i < n) {
+                    currentLayerName = tokens[i++];
+                }
+                continue;
+            }
+
+            // Ignore everything else (USE, WIDTH, VIA, RECT, etc.)
+            ++i;
         }
     }
 
@@ -837,6 +1028,101 @@ class CoarsePdnBuilder3D {
                 // Ignore other tokens (DIRECTION, LAYER, PORT, '+', etc.)
                 continue;
             }
+        }
+    }
+
+    void handleViasLine(const std::string& line) {
+        std::vector<std::string> tokens = tokenizeDef(line);
+        if (tokens.empty()) return;
+
+        // We only care about lines that start a via definition:
+        //   - via4_1600x1600 + VIARULE ... + CUTSIZE ... + LAYERS ...
+        if (tokens[0] != "-" || tokens.size() < 2) {
+            return;
+        }
+
+        std::string viaName = stripDefQuotes(tokens[1]);
+
+        std::string viaRuleName;
+        std::string bottomLayer;
+        std::string cutLayer;
+        std::string topLayer;
+
+        int cutSizeX         = 0;
+        int cutSizeY         = 0;
+        int cutSpacingX      = 0;
+        int cutSpacingY      = 0;
+        int enclosureBottomX = 0;
+        int enclosureBottomY = 0;
+        int enclosureTopX    = 0;
+        int enclosureTopY    = 0;
+        int rows             = 1;
+        int cols             = 1;
+
+        size_t       i = 2;
+        const size_t n = tokens.size();
+
+        while (i < n) {
+            const std::string& tok = tokens[i];
+
+            if (tok == "+") {
+                ++i;
+                continue;
+            }
+            if (tok == ";") {
+                break;
+            }
+
+            if (tok == "VIARULE" && i + 1 < n) {
+                viaRuleName = stripDefQuotes(tokens[i + 1]);
+                i += 2;
+            } else if (tok == "CUTSIZE" && i + 2 < n) {
+                parseIntSafe(tokens[i + 1], cutSizeX);
+                parseIntSafe(tokens[i + 2], cutSizeY);
+                i += 3;
+            } else if (tok == "LAYERS" && i + 3 < n) {
+                bottomLayer = stripDefQuotes(tokens[i + 1]);
+                cutLayer    = stripDefQuotes(tokens[i + 2]);
+                topLayer    = stripDefQuotes(tokens[i + 3]);
+                i += 4;
+            } else if (tok == "CUTSPACING" && i + 2 < n) {
+                parseIntSafe(tokens[i + 1], cutSpacingX);
+                parseIntSafe(tokens[i + 2], cutSpacingY);
+                i += 3;
+            } else if (tok == "ENCLOSURE" && i + 4 < n) {
+                // DEF syntax: ENCLOSURE <botX> <botY> <topX> <topY>
+                parseIntSafe(tokens[i + 1], enclosureBottomX);
+                parseIntSafe(tokens[i + 2], enclosureBottomY);
+                parseIntSafe(tokens[i + 3], enclosureTopX);
+                parseIntSafe(tokens[i + 4], enclosureTopY);
+                i += 5;
+            } else if (tok == "ROWCOL" && i + 2 < n) {
+                parseIntSafe(tokens[i + 1], rows);
+                parseIntSafe(tokens[i + 2], cols);
+                i += 3;
+            } else {
+                // Ignore other keywords we don't need for coarse modeling
+                ++i;
+            }
+        }
+
+        // Register via geometry in TechDatabase if we have basic connectivity
+        if (!bottomLayer.empty() && !topLayer.empty()) {
+            mTechDb.addViaGeometryFromDef(viaName,
+                                          viaRuleName,
+                                          bottomLayer,
+                                          cutLayer,
+                                          topLayer,
+                                          cutSizeX,
+                                          cutSizeY,
+                                          cutSpacingX,
+                                          cutSpacingY,
+                                          enclosureBottomX,
+                                          enclosureBottomY,
+                                          enclosureTopX,
+                                          enclosureTopY,
+                                          rows,
+                                          cols);
         }
     }
 
@@ -1369,10 +1655,10 @@ class CoarsePdnBuilder3D {
 
   private:
     // Inputs
-    const TechDatabase& mTechDb;
-    int                 mGridNx      = 0;
-    int                 mGridNy      = 0;
-    double              mDefaultPkgR = 0.0;
+    TechDatabase& mTechDb;
+    int           mGridNx      = 0;
+    int           mGridNy      = 0;
+    double        mDefaultPkgR = 0.0;
 
     // PDN nets
     std::unordered_map<IdString, NetInfo, IdString::Hash> mNetByName;
