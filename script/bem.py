@@ -237,7 +237,7 @@ def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
     # ----------------------------------------------------------------------
     # 1) Load grid and inspect domain indices (physical surface IDs)
     # ----------------------------------------------------------------------
-    print(f"\nStage2: Importing grid from {msh_file}")
+    print(f"\nStage2: Importing grid from {msh_file}", end="")
     grid = bempp_cl.api.import_grid(msh_file)
 
     indices = set()
@@ -373,12 +373,12 @@ def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
     # 6) Assemble the mixed Dirichlet/Neumann block system
     #
     #   On Γ_p (ports):       V φ = g_p
-    #   On Γ_N (NON_PORT):    (-1/2 I + K') φ = 0
+    #   On Γ_N (NON_PORT):    ( 1/2 I + K') φ = 0
     #
     #   With φ = [φ_p; φ_N] in terms of port / NON_PORT DOFs:
     #
     #   [ V_pp        V_pN             ] [φ_p] = [g_p]
-    #   [ Kp_Np  Kp_NN - 0.5 * I_NN    ] [φ_N]   [ 0 ]
+    #   [ Kp_Np  Kp_NN + 0.5 * I_NN    ] [φ_N]   [ 0 ]
     #
     # ----------------------------------------------------------------------
     print("\nStage4: Assembling mixed Dirichlet/Neumann block system ...")
@@ -414,14 +414,14 @@ def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
     # Build block system matrix A
     if len(port_dofs) > 0 and len(nonport_dofs) > 0:
         A_top = np.hstack([V_pp, V_pN])
-        A_bottom = np.hstack([Kp_Np, Kp_NN - 0.5 * I_NN])
+        A_bottom = np.hstack([Kp_Np, Kp_NN + 0.5 * I_NN])
         A = np.vstack([A_top, A_bottom])
     elif len(port_dofs) > 0:
         # Only ports, no non-ports
         A = V_pp
     elif len(nonport_dofs) > 0:
         # Only non-ports, no ports (unusual but handle it)
-        A = Kp_NN - 0.5 * I_NN
+        A = Kp_NN + 0.5 * I_NN
     else:
         raise ValueError("No DOFs found!")
 
@@ -440,19 +440,24 @@ def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
     for j, exc_tag in enumerate(port_tags):
         print(f"\n=== Solving for excitation of port {j + 1} (tag {exc_tag}) ===")
 
-        # Dirichlet BC: V=1 on port j, V=0 elsewhere on Γ_p, 0 on Γ_N by construction.
+        # Dirichlet BC: V=1 on port j, V=0 on all other ports.
         g_fun = dirichlet_fun_factory(exc_tag)
         g_dirichlet = bempp_cl.api.GridFunction(space, fun=g_fun)
-        g_coeff_full = g_dirichlet.coefficients  # length = ndofs
-        
-        # Ensure g_coeff_full is 1D
-        if g_coeff_full.ndim > 1:
-            g_coeff_full = g_coeff_full.ravel()
 
-        # Restrict Dirichlet data to port DOFs (Γ_p)
-        g_p = g_coeff_full[port_dofs]  # top block right-hand side
+        # Coefficients of the L2-projection of g onto the DP0 space
+        g_coeff_full = g_dirichlet.coefficients.ravel()
+
+        # IMPORTANT: The weak-form single-layer matrix V_mat acts on trial
+        # coefficients and produces inner products <ψ_i, S φ>.  The right-hand side
+        # on Dirichlet rows must be <ψ_i, g>, not the projection coefficients
+        # themselves.  Since I_mat is the L2 mass matrix, we have:
+        #     rhs_full = I_mat * g_coeff_full  ≈ [ <ψ_i, g> ]_i
+        g_rhs_full = I_mat @ g_coeff_full
+
+        # Restrict Dirichlet RHS to port test dofs
+        g_p = np.asarray(g_rhs_full).ravel()[port_dofs]
+
         zeros_N = np.zeros(len(nonport_dofs), dtype=np.float64)
-
         rhs = np.concatenate([g_p, zeros_N])
 
         # Solve A * [φ_p; φ_N] = rhs using dense LU
@@ -473,36 +478,37 @@ def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
         phi_j = bempp_cl.api.GridFunction(space, coefficients=phi_coeff)
 
         # ------------------------------------------------------------------
-        # Compute interior normal derivative:
-        #   q_int = ∂V/∂n_int = (-0.5 I + K') φ
+        # Compute weak normal derivative and port currents:
+        #
+        #   q_int = ∂V/∂n_int = (0.5 I + K') φ   (strong form)
+        #
+        # In weak form (with DP0 test functions ψ_i),
+        #   (q_weak)_i = ∫ ψ_i q_int dS
+        #              = ∑_j (Kp_mat + 0.5 * I_mat)_{ij} * φ_j
+        #
+        # We never need the strong coefficients of q_int; for the currents we
+        # only need ∫_{Γ_i} q_int dS, which is just a sum over q_weak entries
+        # on port i. This keeps everything consistent with the block system,
+        # which also uses (Kp_mat - 0.5 I_mat).
         # ------------------------------------------------------------------
-        print("  Computing interior normal derivative q = (-0.5 I + K') * φ ...")
+        print("  Computing port currents from weak flux q_weak = (K' - 0.5 I) φ ...")
 
-        # Compute using BEM++ operators directly (more accurate)
-        q_j_grid = adj_dlp * phi_j
-        q_j_grid -= 0.5 * phi_j  # q_j now represents (-0.5 I + K') * φ
-        
-        # Get coefficients and ensure it's 1D
-        q_coeff = q_j_grid.coefficients
-        if q_coeff.ndim > 1:
-            q_coeff = q_coeff.ravel()
+        # Full weak flux vector: length = ndofs
+        # q_weak[k] ≈ ∫ ψ_k(x) q_int(x) dS_x
+        q_weak = (Kp_mat + 0.5 * I_mat) @ phi_coeff
+        q_weak = np.asarray(q_weak).ravel()
 
-        # ------------------------------------------------------------------
-        # Integrate q over each port to get current:
-        #   I_i = -kappa * ∫_{Γ_i} q dS
-        #       ≈ -kappa * w_i^T * M * q, where M is the mass matrix.
-        # ------------------------------------------------------------------
+        # Integrate q_int over each port using the indicator functions.
+        # For DP0, each w_i has coefficients equal to 1 on elements in Γ_i,
+        # 0 elsewhere, so
+        #   ∫_{Γ_i} q_int dS ≈ w_i^T * q_weak
         for i, w_i in enumerate(port_indicators):
-            w_coeff = w_i.coefficients
-            
-            # Compute M * q and ensure it's 1D
-            Mq = I_mat @ q_coeff
-            Mq = np.asarray(Mq).flatten()
-            
-            # Now both should be 1D arrays of same length
-            flux_int = np.dot(w_coeff, Mq)
+            w_coeff = w_i.coefficients.ravel()
+
+            flux_int = float(w_coeff @ q_weak)
             I_ij = -kappa * flux_int
             G[i, j] = I_ij
+
             print(
                 f"    Port {i + 1} current for excitation {j + 1}: "
                 f"I[{i + 1},{j + 1}] = {I_ij:.6e} A"
@@ -520,153 +526,12 @@ def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
 
     row_sums = G.sum(axis=1)
     col_sums = G.sum(axis=0)
-    print("\nConductance matrix G [Siemens]:")
-    np.set_printoptions(precision=4, suppress=True)
-    print(G)
 
     print("\nRow sums of G (should be ~0):", row_sums)
     print("Col sums of G (should be ~0):", col_sums)
 
     return G
 
-
-# def build_conductance_matrix(msh_file, nports, kappa, port_tag_offset):
-#     """
-#     Load the mesh from msh_file, set up the BEM problem with Bempp,
-#     and compute the multi-port conductance matrix G.
-
-#     Returns:
-#       G [N x N] (numpy array, units of Siemens).
-#     """
-#     # 3.1) Import grid
-#     print(f"\nStage2: Importing grid from {msh_file}", end="")
-#     grid = bempp_cl.api.import_grid(msh_file)
-#     indices = set()
-#     for e in grid.entity_iterator(0):
-#         indices.add(e.domain_index)
-#     print("  Number of elements:", grid.number_of_elements)
-#     print("  Unique domain indices:", sorted(indices))
-
-#     # Prepare port tags (match the ones in .geo)
-#     port_tags = [port_tag_offset + i for i in range(nports)]
-
-#     print("Port tags (physical surface IDs):")
-#     for i, tag in enumerate(port_tags):
-#         print(f"  Port {i+1}: tag = {tag}")
-
-#     # 3.2) Function space: piecewise constants ("DP", 0)
-#     space = bempp_cl.api.function_space(grid, "DP", 0)
-#     print("Function space dimension:", space.global_dof_count)
-
-#     # 3.3) Operators: Single-layer and adjoint double-layer (Laplace)
-#     slp = bempp_cl.api.operators.boundary.laplace.single_layer(
-#         space, space, space)
-#     adj_dlp = bempp_cl.api.operators.boundary.laplace.adjoint_double_layer(
-#         space, space, space)
-#     # Identity operator for inner products (mass matrix on the boundary)
-#     mass = sparse.identity(space, space, space).weak_form()
-
-#     print("Assembled Laplace single-layer and adjoint double-layer operators.")
-
-#     # 3.4) Helper callables for Dirichlet BC and indicator functions
-
-#     def dirichlet_fun_factory(excited_port_tag):
-#         """
-#         Return callable g(x, n, domain_index, result):
-#           = 1.0 on excited port,
-#           = 0.0 on all others.
-#         """
-#         @bempp_cl.api.real_callable
-#         def g(x, n, domain_index, result):
-#             if domain_index == excited_port_tag:
-#                 result[0] = 1.0
-#             else:
-#                 result[0] = 0.0
-
-#         return g
-
-#     def indicator_fun_factory(port_tag):
-#         """
-#         Return callable w(x, n, domain_index, result):
-#           = 1.0 on given port,
-#           = 0.0 otherwise.
-#         Used to integrate quantities over that port.
-#         """
-#         @bempp_cl.api.real_callable
-#         def w(x, n, domain_index, result):
-#             if domain_index == port_tag:
-#                 result[0] = 1.0
-#             else:
-#                 result[0] = 0.0
-
-#         return w
-
-#     # 3.5) Build indicator grid functions (for integrating over each port)
-#     port_indicators = []
-#     for i, tag in enumerate(port_tags):
-#         w_fun = indicator_fun_factory(tag)
-#         w_gf = bempp_cl.api.GridFunction(space, fun=w_fun)
-#         port_indicators.append(w_gf)
-
-#     # 3.6) Solve the BEM problem for each port excitation
-#     from bempp_cl.api.linalg import gmres
-
-#     G = np.zeros((nports, nports), dtype=np.float64)
-
-#     for j, exc_tag in enumerate(port_tags):
-#         print(
-#             f"\n=== Solving for excitation of port {j+1} (tag {exc_tag}) ===")
-
-#         # Dirichlet BC: V=1 on port j, V=0 elsewhere
-#         g_fun = dirichlet_fun_factory(exc_tag)
-#         g_dirichlet = bempp_cl.api.GridFunction(space, fun=g_fun)
-
-#         # First-kind integral equation: S * phi = g
-#         # phi is the single-layer density (not directly flux).
-#         print("  Solving S * phi = g via GMRES ...")
-#         phi_j, info = gmres(slp,
-#                             g_dirichlet,
-#                             tol=1e-6,
-#                             maxiter=500,
-#                             use_strong_form=True)
-#         if info != 0:
-#             print(f"  [Warning] GMRES did not fully converge, info = {info}")
-
-#         # Compute normal derivative in the exterior:
-#         #   q_ext = ∂V/∂n (exterior) = (K' + 0.5 I) * phi_j
-#         # where K' is the adjoint double-layer operator.
-#         print("  Computing normal derivative q = (K' + 0.5 I) * phi ...")
-#         q_j = adj_dlp * phi_j
-#         q_j += 0.5 * phi_j  # uses overloaded __iadd__
-
-#         # Now integrate q_j over each port to get ∫ (∂V/∂n) dS.
-#         # Physical current: I_i = -kappa * ∫_Γi ∂V/∂n dS
-#         for i, w_i in enumerate(port_indicators):
-#             w_coeff = w_i.coefficients
-#             q_coeff = q_j.coefficients
-#             # Integral ≈ w^T * M * q  where M is identity operator's weak form.
-#             flux_int = w_coeff.dot(mass @ q_coeff)  # ≈ ∫_Γi ∂V/∂n dS
-#             I_ij = -kappa * flux_int
-#             G[i, j] = I_ij
-#             print(
-#                 f"    Port {i+1} current for excitation {j+1}: I[{i+1},{j+1}] = {I_ij:.6e} A"
-#             )
-
-#     # 3.7) Post-process G: fix sign convention if needed (want G_ii < 0)
-#     # For a passive network, we expect G_ii < 0 and sum_j G_ij = 0 (roughly).
-#     if G[0, 0] > 0:
-#         print(
-#             "\nDiagonal of G is positive; flipping overall sign for conventional form."
-#         )
-#         G = -G
-
-#     # Check approximate row/column sum zeros
-#     row_sums = G.sum(axis=1)
-#     col_sums = G.sum(axis=0)
-#     print("\nRow sums of G (should be ~0):", row_sums)
-#     print("Col sums of G (should be ~0):", col_sums)
-
-#     return G
 
 # ------------------------
 # 4) Convert conductance matrix to pairwise resistances
