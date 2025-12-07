@@ -169,7 +169,7 @@ void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
     int32_t netIndex = -1;
     if (pn1.mNet >= 0) netIndex = pn1.mNet;
     else if (pn2.mNet >= 0) netIndex = pn2.mNet;
-    res.mNet = netIndex;
+    res.mNet = NetId(netIndex);
 
     res.mR = rVal;
 

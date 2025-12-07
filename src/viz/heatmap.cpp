@@ -140,7 +140,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
         }
         const Node& node = itNode->second;
 
-        int32_t netId = node.mNet;
+        int32_t netId = node.mNet.get();
         if (netId < 0) {
             // Ignore invalid netId if any.
             continue;

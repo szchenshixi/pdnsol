@@ -1,22 +1,64 @@
 #pragma once
 #include <optional>
+#include <unordered_map>
 
 #include "pdnsol/common.hpp"
 
 namespace pdnsol {
+class NetId {
+  public:
+    static const NetId Invalid;
+
+    NetId()
+        : NetId(-1) {}
+    constexpr explicit NetId(int v)
+        : value{v} {}
+
+    constexpr int      get() const noexcept { return value; }
+    constexpr explicit operator bool() const noexcept { return value > 0; }
+
+    // Comparisons
+    friend constexpr bool operator==(NetId a, NetId b) noexcept {
+        return a.value == b.value;
+    }
+    friend constexpr bool operator!=(NetId a, NetId b) noexcept {
+        return a.value != b.value;
+    }
+
+  private:
+    int value;
+};
+inline const NetId NetId::Invalid{-1};
 // -------------------------------
 // Domain model
 // -------------------------------
+struct NetKey {
+    IdString layer;
+    IdString name;
+    struct Hash {
+        std::size_t operator()(const NetKey& v) const {
+            std::size_t h1 = IdString::Hash{}(v.layer);
+            std::size_t h2 = IdString::Hash{}(v.name);
+            // Boost-style combine
+            return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
+        }
+    };
+
+    bool operator==(const NetKey& other) const noexcept {
+        return layer == other.layer && name == other.name;
+    }
+};
+
 struct Node {
     IdString mName;
-    int32_t  mNet; // Layer-(VDD/VSS) combination
+    NetId    mNet; // Layer-(VDD/VSS) combination
     Tick     mX;   // micrometers, in FPN format
     Tick     mY;   // micrometers, in FPN format
 };
 
 struct MetalRes {
     IdString   mName;
-    int32_t    mNet; // Layer-(VDD/VSS) combination
+    NetId      mNet; // Layer-(VDD/VSS) combination
     IdString   mN1;  // Node_1
     IdString   mN2;  // Node_2
     ScalarType mR = 0.0;
@@ -77,8 +119,13 @@ struct CircuitGraph {
     std::vector<SectionMeta> mSections;
     IdStringMap              mMetadata;
 
-    // Return all nodes (const access)
-    const NodeMap& allNodes() const;
+  private:
+    std::unordered_map<NetKey, NetId, NetKey::Hash> mNet2Id; // Net to its id
+    std::vector<NetKey>                             mId2Net;
+
+  public:
+    NetId netId(IdString layer, IdString name) const;
+    NetId registerNet(IdString layer, IdString name);
 
     // Ensure a node exists, similar to getOrCreate
     Node& ensureNode(const IdString& name, int32_t net = -1,
@@ -92,6 +139,6 @@ struct CircuitGraph {
 
     void validateReadyForMna() const;
 
-    void purge_parallel_elements();
+    void purgeParallelElements();
 };
 } // namespace pdnsol

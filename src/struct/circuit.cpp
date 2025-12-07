@@ -220,8 +220,24 @@ void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
 }
 } // anonymous namespace
 
-const NodeMap& CircuitGraph::allNodes() const {
-    return mNodes;
+NetId CircuitGraph::netId(IdString layer, IdString name) const {
+    if (!layer.valid() || !name.valid()) return NetId::Invalid;
+    NetKey key{layer, name};
+    auto   it = mNet2Id.find(key);
+    if (it == mNet2Id.end()) return NetId::Invalid;
+    return it->second;
+}
+NetId CircuitGraph::registerNet(IdString layer, IdString name) {
+    NetKey  key{layer, name};
+    int32_t nextId      = static_cast<int32_t>(mId2Net.size());
+    auto [it, inserted] = mNet2Id.emplace(key, nextId);
+    if (!inserted) {
+        // already exists
+        return it->second;
+    }
+    mId2Net.push_back(key);
+    PDN_FATAL_IF(mId2Net.size() != mNet2Id.size(), "Inconsistent net map");
+    return NetId{static_cast<int32_t>(mId2Net.size())};
 }
 
 Node& CircuitGraph::ensureNode(const IdString& name, int net,
@@ -240,7 +256,7 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     auto it = mNodes.find(name);
     if (it != mNodes.end()) {
         Node& node = it->second;
-        if (net && !node.mNet) node.mNet = net;
+        if (net && !node.mNet) node.mNet = NetId(net);
         if (x && !node.mX) node.mX = FPN::toRep(*x);
         if (y && !node.mY) node.mY = FPN::toRep(*y);
         return node;
@@ -248,7 +264,7 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
 
     Node newNode;
     newNode.mName      = name;
-    newNode.mNet       = net;
+    newNode.mNet       = NetId(net);
     newNode.mX         = x ? FPN::toRep(*x) : -1;
     newNode.mY         = y ? FPN::toRep(*y) : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
@@ -334,7 +350,7 @@ void CircuitGraph::validateReadyForMna() const {
         checkR(res.mName, res.mR);
 }
 
-void CircuitGraph::purge_parallel_elements() {
+void CircuitGraph::purgeParallelElements() {
     // 1. Resistive network (metal, via, package)
     mergeParallelResistors(mMetalResistors);
     mergeParallelResistors(mViaResistors);

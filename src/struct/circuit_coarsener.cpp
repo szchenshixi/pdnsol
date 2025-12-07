@@ -1,4 +1,4 @@
-#include "pdnsol/solver/circuit_coarsener.hpp"
+#include "pdnsol/struct/circuit_coarsener.hpp"
 
 #include <algorithm> // std::max
 #include <utility>   // std::move
@@ -85,7 +85,7 @@ int64_t CircuitCoarsener::tileIndex(Tick coord, Tick origin) const {
 
 detail::TileKey CircuitCoarsener::computeTileKey(const Node& n) const {
     detail::TileKey key;
-    key.net = n.mNet;
+    key.net = n.mNet.get();
     key.tx  = n.mX < 0 ? -1 : tileIndex(n.mX, mMinX);
     key.ty  = n.mY < 0 ? -1 : tileIndex(n.mY, mMinY);
     return key;

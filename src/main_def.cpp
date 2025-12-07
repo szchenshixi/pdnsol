@@ -1,6 +1,9 @@
+#include <filesystem>
 #include <iostream>
 
 #include "pdnsol/io/parser_def.hpp"
+#include "pdnsol/struct/circuit_decorator.hpp"
+#include "pdnsol/utils/logging.hpp"
 
 using namespace pdnsol;
 
@@ -83,5 +86,21 @@ int main(int argc, char** argv) {
     //   - Solve G V = I (e.g., with CG/PCG) and extract coarse IR-drop
     //   heatmap.
 
+    if (std::filesystem::exists("../test/data/current.json")) {
+        DecoratorConfig decoratorConfig;
+        decoratorConfig.currentConfigPath = "../test/data/current.json";
+        CircuitDecorator decorator(graph, decoratorConfig);
+        decorator.build();
+    } else if (std::filesystem::exists("./test/data/current.json")) {
+        DecoratorConfig decoratorConfig;
+        decoratorConfig.currentConfigPath = "./test/data/current.json";
+        CircuitDecorator decorator(graph, decoratorConfig);
+        decorator.build();
+    } else {
+        PDN_INFO("Cannot find current source definition. Skip.");
+    }
+
+    std::cout << "Current sources embedded\n";
+    std::cout << "Current sources:      " << graph.mIsrcs.size() << "\n";
     return 0;
 }

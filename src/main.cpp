@@ -1,9 +1,7 @@
-#include <iostream>
-
 #include "pdnsol/io/parser_spef.hpp"
 #include "pdnsol/io/parser_spice.hpp"
-#include "pdnsol/solver/circuit_coarsener.hpp"
 #include "pdnsol/solver/solver_basic.hpp"
+#include "pdnsol/struct/circuit_coarsener.hpp"
 #include "pdnsol/utils/logging.hpp"
 #include "pdnsol/utils/perf_stats.hpp"
 #include "pdnsol/viz/heatmap.hpp"
@@ -54,12 +52,12 @@ int main() {
 
     CircuitCoarsener coarsener(fcirc, cfg);
     CircuitGraph     ccirc = coarsener.build();
-    ccirc.purge_parallel_elements();
+    ccirc.purgeParallelElements();
 
     {
-        PERF_STATS("Profiling full circuit");
-        PDN_INFO("Starting profiling full circuit with %'d",
-                 fcirc.allNodes().size());
+        PERF_STATS("Solving full circuit");
+        PDN_INFO("Starting solving full circuit with %'d nodes",
+                 fcirc.mNodes.size());
         // 2. Solve the MNA system
         MNASystem    fmna = assembleMNA(fcirc);
         MNASolution  fsol = solveMNA(fmna);
@@ -71,9 +69,9 @@ int main() {
     }
 
     {
-        PERF_STATS("Profiling coarse circuit");
-        PDN_INFO("Starting profiling coarse circuit with %'d",
-                 ccirc.allNodes().size());
+        PERF_STATS("Solving coarse circuit");
+        PDN_INFO("Starting solving coarse circuit with %'d nodes",
+                 ccirc.mNodes.size());
         // 2. Solve the MNA system
         MNASystem    cmna = assembleMNA(ccirc);
         MNASolution  csol = solveMNA(cmna);

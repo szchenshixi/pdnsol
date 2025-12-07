@@ -45,13 +45,15 @@ add_library(
   src/io/parser_spef.cpp
   src/viz/heatmap.cpp
   src/struct/circuit.cpp
+  src/struct/circuit_coarsener.cpp
+  src/struct/circuit_decorator.cpp
   src/solver/mna.cpp
-  src/solver/circuit_coarsener.cpp
   src/solver/solver_basic.cpp)
 
 target_include_directories(pdnsol_lib PUBLIC ${PROJECT_SOURCE_DIR}/include
                                              ${PROJECT_BINARY_DIR})
-target_link_libraries(pdnsol_lib PUBLIC fmt::fmt Eigen3::Eigen util_lib)
+target_link_libraries(pdnsol_lib PUBLIC fmt::fmt Eigen3::Eigen
+                                        nlohmann_json::nlohmann_json util_lib)
 target_compile_features(pdnsol_lib PUBLIC cxx_std_20)
 
 # III. ohmify_lib

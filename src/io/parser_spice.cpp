@@ -182,8 +182,7 @@ void parseCommentMeta(
   const std::string& lineBody, // already without leading '*'
   CircuitGraph& circ, ParseState& st) {
     std::string content = trim(lineBody);
-    if (content.empty())
-        return;
+    if (content.empty()) return;
 
     std::string lower = toLower(content);
 
@@ -192,8 +191,7 @@ void parseCommentMeta(
         std::string rest = trim(content.substr(std::string("layer:").size()));
         // rest: "M1,VDD net: 1"
         auto        tokens = splitWhitespace(rest);
-        if (tokens.empty())
-            return;
+        if (tokens.empty()) return;
 
         // First token: "<layerName>,<netName>"
         auto        nameParts = splitOnChar(tokens[0], ',');
@@ -235,6 +233,10 @@ void parseCommentMeta(
         meta.mFromNet = IdString(std::to_string(netIndex)); // store index here
         meta.mToNet   = IdString("");                       // unused for layer
         meta.mRaw     = IdString(content);
+        NetId netId =
+          circ.registerNet(IdString(layerNameStr), IdString(netNameStr));
+        PDN_FATAL_IF(netId.get() != netIndex,
+                     "layer-net should be registered in an ascending order");
         circ.mSections.push_back(std::move(meta));
         return;
     }
@@ -331,12 +333,10 @@ void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
 
         int32_t netIdx = st.layerNetIndex;
         if (netIdx < 0) {
-            if (pn1.netIndex >= 0)
-                netIdx = pn1.netIndex;
-            else if (pn2.netIndex >= 0)
-                netIdx = pn2.netIndex;
+            if (pn1.netIndex >= 0) netIdx = pn1.netIndex;
+            else if (pn2.netIndex >= 0) netIdx = pn2.netIndex;
         }
-        mr.mNet = netIdx;
+        mr.mNet = NetId(netIdx);
         mr.mR   = R;
         circ.mMetalResistors.push_back(std::move(mr));
     } else {
@@ -465,8 +465,7 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
     while (std::getline(in, line)) {
         ++lineNumber;
         std::string stripped = trim(line);
-        if (stripped.empty())
-            continue;
+        if (stripped.empty()) continue;
 
         // Comment or meta line
         if (stripped[0] == '*') {
@@ -489,8 +488,7 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
         }
 
         auto tokens = splitWhitespace(stripped);
-        if (tokens.empty())
-            continue;
+        if (tokens.empty()) continue;
 
         char elemType = static_cast<char>(
           std::toupper(static_cast<unsigned char>(tokens[0][0])));

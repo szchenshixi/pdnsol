@@ -13,6 +13,7 @@
 #include <vector>
 
 #include "pdnsol/io/parser_utils.hpp" // for trim, startsWithIgnoreCase, clamp
+#include "pdnsol/utils/fixed_point_number.hpp"
 
 namespace pdnsol {
 
@@ -1233,6 +1234,14 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
         }
     }
 
+    for (int l = 0; l < mNumLayers; ++l) {
+        IdString layerName = mLayerOrder[l];
+        for (int n = 0; n < mNumNets; ++n) {
+            IdString netName = mNetByIndex[n].name;
+            graph.registerNet(layerName, netName);
+        }
+    }
+
     // 1) Create per-(net,layer,tile) nodes and in-plane metal resistors
     for (int n = 0; n < mNumNets; ++n) {
         const NetInfo& ni = mNetByIndex[n];
@@ -1259,9 +1268,9 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
                     IdString nodeId = IdString(ossName.str());
                     Node     node;
                     node.mName = nodeId;
-                    node.mNet  = netLayerCode;
-                    node.mX    = static_cast<Tick>(std::llround(xCenterUm));
-                    node.mY    = static_cast<Tick>(std::llround(yCenterUm));
+                    node.mNet  = NetId(netLayerCode);
+                    node.mX    = FPN::toRep(xCenterUm);
+                    node.mY    = FPN::toRep(yCenterUm);
 
                     graph.mNodes.emplace(nodeId, node);
                     tileNodeIds[n][l][static_cast<std::size_t>(iy * nx + ix)] =
@@ -1289,7 +1298,7 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
 
                     MetalRes mr;
                     mr.mName = resId;
-                    mr.mNet  = netLayerCode;
+                    mr.mNet  = NetId(netLayerCode);
                     mr.mN1   = n1;
                     mr.mN2   = n2;
                     mr.mR    = R;
@@ -1317,7 +1326,7 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
 
                     MetalRes mr;
                     mr.mName = resId;
-                    mr.mNet  = netLayerCode;
+                    mr.mNet  = NetId(netLayerCode);
                     mr.mN1   = n1;
                     mr.mN2   = n2;
                     mr.mR    = R;
@@ -1406,9 +1415,9 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
 
         Node bumpNode;
         bumpNode.mName = bumpNodeId;
-        bumpNode.mNet  = netLayerCode;
-        bumpNode.mX    = static_cast<Tick>(std::llround(b.x_um));
-        bumpNode.mY    = static_cast<Tick>(std::llround(b.y_um));
+        bumpNode.mNet  = NetId(netLayerCode);
+        bumpNode.mX    = FPN::toRep(b.x_um);
+        bumpNode.mY    = FPN::toRep(b.y_um);
         graph.mNodes.emplace(bumpNodeId, bumpNode);
 
         // Package resistor
