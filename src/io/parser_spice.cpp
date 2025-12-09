@@ -233,8 +233,10 @@ void parseCommentMeta(
         meta.mFromNet = IdString(std::to_string(netIndex)); // store index here
         meta.mToNet   = IdString("");                       // unused for layer
         meta.mRaw     = IdString(content);
-        NetId netId =
-          circ.registerNet(IdString(layerNameStr), IdString(netNameStr));
+        bool  isPwr = (netNameStr == "VDD"); // Hard coded for IBMPG benchmark
+        bool  isGnd = (netNameStr == "GND"); // Hard coded for IBMPG benchmark
+        NetId netId = circ.registerNet(
+          IdString(layerNameStr), IdString(netNameStr), isPwr, isGnd);
         PDN_FATAL_IF(netId.get() != netIndex,
                      "layer-net should be registered in an ascending order");
         circ.mSections.push_back(std::move(meta));

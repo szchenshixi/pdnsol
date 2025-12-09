@@ -32,10 +32,10 @@ int main() {
     // 1. Prepare the circuits
     CircuitGraph fcirc =
       parseSpiceFile("/home/szchenshixi/git_repository/pdnsol_cpp/test/data/"
-                     "ibmpg/1/ibmpg1.spice");
+                     "ibmpg/6/ibmpg6.spice");
     // CircuitGraph
     CoarseModelConfig cfg;
-    cfg.tileSizeUm = 100.0;
+    cfg.tileSizeUm = 5000.0;
 
     // Suppose your MetalRes::mName for layers are something like:
     // "M1_VDD", "M2_VDD", ..., "M9_VDD", and similarly for VSS.

@@ -7,6 +7,7 @@
 #include "pdnsol/viz/heatmap.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <limits>
 #include <sstream>
 #include <stdexcept>
@@ -24,6 +25,7 @@
 #include "pdnsol/solver/solver_basic.hpp"
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/fixed_point_number.hpp"
+#include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
 
@@ -33,18 +35,22 @@ namespace pdnsol {
 
 // Compute a global bounding box over all nodes in the circuit.
 LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
-                                    bool skipGndNode) {
+                                    bool                skipGndNode) {
     LayoutBBox bbox;
     bbox.minX = bbox.minY = std::numeric_limits<double>::infinity();
     bbox.maxX = bbox.maxY = -std::numeric_limits<double>::infinity();
 
     for (const auto& kv : circ.mNodes) {
         const IdString& name = kv.first;
-        const Node& node = kv.second;
+        const Node&     node = kv.second;
 
-        if (skipGndNode && name == "GND") { continue; }
+        if (skipGndNode && name == "GND") {
+            continue;
+        }
         // The node has no geometry information
-        if (node.mX < 0 || node.mY < 0) { continue; }
+        if (node.mX < 0 || node.mY < 0) {
+            continue;
+        }
 
         double x = FPN::fromRep(node.mX);
         double y = FPN::fromRep(node.mY);
@@ -80,8 +86,8 @@ std::string makeNetLabel(int32_t netId) {
 // Heatmap construction: multi-layer / multi-net binning
 // -------------------------
 
-HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
-                                         const MNASolution& sol,
+HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
+                                         const MNASolution&         sol,
                                          const IRDropHeatmapConfig& cfg) {
     // 1. Determine bounding box
     LayoutBBox bbox;
@@ -126,11 +132,13 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
     // 2. Single pass over all solved nodes
     for (const auto& kv : sol.mNodeIndex) {
         const IdString& nodeName = kv.first;
-        int64_t solIndex = kv.second;
+        int64_t         solIndex = kv.second;
 
         // We skip GND as it's typically reference (0V) and not a physical node
         // in the grid for IR-drop visualization. Adjust if needed.
-        if (nodeName == "GND") { continue; }
+        if (nodeName == "GND") {
+            continue;
+        }
 
         // Find the node in circuit graph to get geometry & netId.
         auto itNode = circ.mNodes.find(nodeName);
@@ -146,8 +154,8 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
             continue;
         }
 
-        NetDecomposition nd = decodeNetId(netId);
-        bool isVdd = nd.isVdd;
+        NetDecomposition nd    = decodeNetId(netId);
+        bool             isVdd = nd.isVdd;
 
         // Apply filters: VDD/VSS
         if (isVdd && !cfg.includeVdd) continue;
@@ -177,18 +185,18 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph& circ,
 
         // Metric to be visualized.
         double metric = computeMetric(Vnode, isVdd, cfg);
-        float fVal = static_cast<float>(metric);
+        float  fVal   = static_cast<float>(metric);
 
         // 3. Get or create heatmap for this netId.
         auto itHm = heatmaps.find(netId);
         if (itHm == heatmaps.end()) {
-            IRDropHeatmap hm = makeEmptyHeatmap(bbox, cfg.width, cfg.height);
-            auto res = heatmaps.emplace(netId, std::move(hm));
-            itHm = res.first;
+            IRDropHeatmap hm  = makeEmptyHeatmap(bbox, cfg.width, cfg.height);
+            auto          res = heatmaps.emplace(netId, std::move(hm));
+            itHm              = res.first;
         }
 
         IRDropHeatmap& hm = itHm->second;
-        IRDropCell& cell =
+        IRDropCell&    cell =
           hm.cells[static_cast<size_t>(iy) * static_cast<size_t>(hm.width) +
                    static_cast<size_t>(ix)];
 
@@ -278,8 +286,8 @@ void writeHeatmapToPng(const IRDropHeatmap& hm, const std::string& filename,
                        bool useMaxValue) {
     const int HEATMAP_W = hm.width;
     const int HEATMAP_H = hm.height;
-    const int OUTPUT_W = 1024;
-    const int OUTPUT_H = 1024;
+    const int OUTPUT_W  = 1024;
+    const int OUTPUT_H  = 1024;
 
     if (HEATMAP_W <= 0 || HEATMAP_H <= 0) {
         throw std::runtime_error(
@@ -357,14 +365,24 @@ void writeAllHeatmapsToPng(const HeatmapByNet& heatmaps,
     std::string dir = outputDir;
     if (!dir.empty()) {
         char last = dir.back();
-        if (last != '/' && last != '\\') { dir.push_back('/'); }
+        if (last != '/' && last != '\\') {
+            dir.push_back('/');
+        }
+    }
+
+    if (!std::filesystem::exists(outputDir)) {
+        if (std::filesystem::create_directory(outputDir)) {
+            PDN_INFO("Created directory %s", outputDir.c_str());
+        } else {
+            PDN_ERROR("Failed to create directory %s", outputDir.c_str());
+        }
     }
 
     for (const auto& kv : heatmaps) {
-        int32_t netId = kv.first;
-        const IRDropHeatmap& hm = kv.second;
+        int32_t              netId = kv.first;
+        const IRDropHeatmap& hm    = kv.second;
 
-        std::string label = makeNetLabel(netId);
+        std::string label    = makeNetLabel(netId);
         std::string filename = dir + label + ".png";
 
         writeHeatmapToPng(hm, filename, useMaxValue);

@@ -235,7 +235,7 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
   const std::vector<std::string>& powerNetNames,
   const std::vector<std::string>& groundNetNames,
   const std::vector<std::string>& layerOrder, double defaultPkgResistanceOhm,
-  int bumpLayerIndex)
+  const std::string& bumpLayerName)
     : mTechDb(techDb)
     , mGridNx(gridNx)
     , mGridNy(gridNy)
@@ -263,10 +263,13 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
     mNumNetLayerComb = mNumNets * mNumLayers;
 
     // 3) Which layer do bumps connect to? default: topmost
-    if (bumpLayerIndex < 0) {
-        mBumpLayerIndex = mNumLayers > 0 ? (mNumLayers - 1) : 0;
-    } else {
-        mBumpLayerIndex = clamp(bumpLayerIndex, 0, mNumLayers - 1);
+    mBumpLayerIndex = mNumLayers - 1; // By default
+    for (size_t i = 0; i < mLayerOrder.size(); ++i) {
+        IdString layerName = mLayerOrder[i];
+        if (layerName.str() == bumpLayerName) {
+            mBumpLayerIndex = i;
+            break;
+        }
     }
 }
 
@@ -1237,8 +1240,10 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
     for (int l = 0; l < mNumLayers; ++l) {
         IdString layerName = mLayerOrder[l];
         for (int n = 0; n < mNumNets; ++n) {
-            IdString netName = mNetByIndex[n].name;
-            graph.registerNet(layerName, netName);
+            IdString netName  = mNetByIndex[n].name;
+            bool     isPower  = mNetByIndex[n].isPower;
+            bool     isGround = mNetByIndex[n].isGround;
+            graph.registerNet(layerName, netName, isPower, isGround);
         }
     }
 

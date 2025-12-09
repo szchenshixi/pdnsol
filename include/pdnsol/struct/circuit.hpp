@@ -3,6 +3,7 @@
 #include <unordered_map>
 
 #include "pdnsol/common.hpp"
+#include "pdnsol/io/parser_utils.hpp"
 
 namespace pdnsol {
 class NetId {
@@ -35,6 +36,14 @@ inline const NetId NetId::Invalid{-1};
 struct NetKey {
     IdString layer;
     IdString name;
+    bool     isPower;
+    bool     isGround;
+
+    // bool isPower() const {
+    //     std::string netName = toLower(name.str());
+    //     if (netName.find("vdd") != std::string::npos) return true;
+    //     return false;
+    // }
     struct Hash {
         std::size_t operator()(const NetKey& v) const {
             std::size_t h1 = IdString::Hash{}(v.layer);
@@ -124,8 +133,9 @@ struct CircuitGraph {
     std::vector<NetKey>                             mId2Net;
 
   public:
-    NetId netId(IdString layer, IdString name) const;
-    NetId registerNet(IdString layer, IdString name);
+    NetId  netId(IdString layer, IdString name) const;
+    NetKey netKey(NetId netId) const;
+    NetId  registerNet(IdString layer, IdString name, bool isPwr, bool isGnd);
 
     // Ensure a node exists, similar to getOrCreate
     Node& ensureNode(const IdString& name, int32_t net = -1,

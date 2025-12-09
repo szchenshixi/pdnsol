@@ -34,7 +34,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/pdnsol_def",
             "args": [
-                "/home/szchenshixi/git_repository/pdnsol_cpp/test/data/datc-rdf-calibrations-master/calibration/sky130hd/aes_cipher_top/aes_cipher_top_1.def"
+                "${workspaceFolder}/test/data/simulation.json"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

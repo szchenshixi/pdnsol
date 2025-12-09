@@ -16,6 +16,8 @@ using Json = nlohmann::json;
 struct DecoratorConfig {
     std::string currentConfigPath;
     std::string voltageConfigPath;
+    std::string voltageSourceLandingLayer;
+    double defaultPkgR;
 };
 
 class CircuitDecorator {
@@ -55,6 +57,8 @@ class CircuitDecorator {
     // -------------------------------------------------------------------------
     void addCurrentRegionsFromJson(const std::string& jsonFilePath,
                                    CircuitGraph&      graph);
+    void addVoltageSourceFromConfig(const std::string& configFilePath,
+                                    CircuitGraph&      graph);
     void addIsrcsForRegionNet(const RectRegion& rect, IdString layer,
                               IdString netName, double totalCurrent,
                               CircuitGraph& graph, std::size_t regionIdx);

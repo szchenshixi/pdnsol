@@ -212,8 +212,8 @@ class CoarsePdnBuilder3D {
                        const std::vector<std::string>& powerNetNames,
                        const std::vector<std::string>& groundNetNames,
                        const std::vector<std::string>& layerOrder,
-                       double defaultPkgResistanceOhm = 0.0,
-                       int    bumpLayerIndex          = -1);
+                       double             defaultPkgResistanceOhm = 0.0,
+                       const std::string& bumpLayerName           = "");
 
     // Encode (netIndex, layerIndex) into Node.mNet and MetalRes.mNet
     int encodeNetLayer(int netIndex, int layerIndex) const;

@@ -204,17 +204,17 @@ void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
         if (g.conflicts.empty()) {
             continue;
         }
-        PDN_WARNING("Conflicting vsrc representative from %s to %s %.2fV",
-                    g.representative.mFromNode.c_str(),
-                    g.representative.mToNode.c_str(),
-                    g.representative.mV);
+        PDN_WARN("Conflicting vsrc representative from %s to %s %.2fV",
+                 g.representative.mFromNode.c_str(),
+                 g.representative.mToNode.c_str(),
+                 g.representative.mV);
         // And all conflicting ones, if any
         for (auto& c : g.conflicts) {
             vsrcs.push_back(std::move(c));
-            PDN_WARNING("Conflicting vsrc source from %s to %s %.2fV",
-                        c.mFromNode.c_str(),
-                        c.mToNode.c_str(),
-                        c.mV);
+            PDN_WARN("Conflicting vsrc source from %s to %s %.2fV",
+                     c.mFromNode.c_str(),
+                     c.mToNode.c_str(),
+                     c.mV);
         }
     }
 }
@@ -227,8 +227,19 @@ NetId CircuitGraph::netId(IdString layer, IdString name) const {
     if (it == mNet2Id.end()) return NetId::Invalid;
     return it->second;
 }
-NetId CircuitGraph::registerNet(IdString layer, IdString name) {
-    NetKey  key{layer, name};
+NetKey CircuitGraph::netKey(NetId netId) const {
+    if (netId.get() < 0 || netId.get() >= mId2Net.size()) {
+        return NetKey{};
+    }
+    return mId2Net[netId.get()];
+}
+NetId CircuitGraph::registerNet(IdString layer, IdString name, bool isPwr,
+                                bool isGnd) {
+    if ((!isPwr && !isGnd) || (isPwr && isGnd)) {
+        PDN_WARN("Found a net that is neither power nor ground: %s",
+                 name.c_str());
+    }
+    NetKey  key{layer, name, isPwr, isGnd};
     int32_t nextId      = static_cast<int32_t>(mId2Net.size());
     auto [it, inserted] = mNet2Id.emplace(key, nextId);
     if (!inserted) {
@@ -237,7 +248,7 @@ NetId CircuitGraph::registerNet(IdString layer, IdString name) {
     }
     mId2Net.push_back(key);
     PDN_FATAL_IF(mId2Net.size() != mNet2Id.size(), "Inconsistent net map");
-    return NetId{static_cast<int32_t>(mId2Net.size())};
+    return NetId{static_cast<int32_t>(mId2Net.size()) - 1};
 }
 
 Node& CircuitGraph::ensureNode(const IdString& name, int net,
