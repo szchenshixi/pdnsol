@@ -1,5 +1,6 @@
 #include <fstream>
 
+#include "pdnsol/solver/mna.hpp"
 #include "pdnsol/struct/circuit_decorator.hpp"
 #include "pdnsol/utils/fixed_point_number.hpp"
 #include "pdnsol/utils/logging.hpp"
@@ -29,7 +30,7 @@ CircuitDecorator::CircuitDecorator(CircuitGraph&          inGraph,
 
 void CircuitDecorator::build() {
     addCurrentRegionsFromJson(mCfg.currentConfigPath, mIn);
-    // addVoltageSourceFromConfig(mCfg.voltageConfigPath, mIn);
+    addVoltageSourceFromConfig(mCfg.voltageConfigPath, mIn);
 }
 
 // -------------------------------------------------------------------------
@@ -60,7 +61,6 @@ void CircuitDecorator::addVoltageSourceFromConfig(
     }
     // Convert landingLayer to IdString -- adapt to your IdString API.
     const IdString landingLayerId(landingLayerStr);
-    const double   defaultPkgR = mCfg.defaultPkgR;
 
     // Open configuration file
     std::ifstream ifs(configFilePath);
@@ -151,11 +151,12 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         }
 
         std::istringstream iss(line);
+        std::string        _; // bumpNameStr
         std::string        netNameStr;
         double             xCoord = 0.0;
         double             yCoord = 0.0;
 
-        if (!(iss >> netNameStr >> xCoord >> yCoord)) {
+        if (!(iss >> _ >> xCoord >> yCoord >> netNameStr)) {
             PDN_WARN("Warning: [addVoltageSourceFromConfig] Failed to "
                      "parse line %d in '%s': '%s",
                      lineNo,
@@ -163,6 +164,14 @@ void CircuitDecorator::addVoltageSourceFromConfig(
                      line.c_str());
             continue;
         }
+
+        auto vsrcProp = mCfg.voltageSources.find(netNameStr);
+        if (vsrcProp == mCfg.voltageSources.end()) {
+            PDN_WARN("Unknown voltage net %s. Skip", netNameStr.c_str());
+            continue;
+        }
+        const ScalarType voltage  = vsrcProp->second.voltage;  // Volt
+        const ScalarType packageR = vsrcProp->second.packageR; // Ohm
 
         // Convert textual net name from config into IdString.
         const IdString netNameId(netNameStr);
@@ -229,7 +238,7 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             pkg.mName = IdString(pkgName);
             pkg.mN1   = info.pkgNode;    // package-side node
             pkg.mN2   = closestNodeName; // PDN node
-            pkg.mR    = defaultPkgR;        // first source -> R_eq = R_user
+            pkg.mR    = packageR;        // first source -> R_eq = R_user
 
             graph.mPkgResistors.push_back(pkg);
             info.pkgResIdx = graph.mPkgResistors.size() - 1;
@@ -241,7 +250,7 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             NodeVsrcInfo& info = itInfo->second;
             ++info.vsrcCount;
 
-            const ScalarType newReq = defaultPkgR / info.vsrcCount;
+            const ScalarType newReq = packageR / info.vsrcCount;
 
             graph.mPkgResistors[info.pkgResIdx].mR = newReq;
         }
@@ -269,10 +278,12 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         Vsrc              vsrc;
         const std::string vsrcName = "VSRC_" + std::to_string(vsrcCounter);
         vsrc.mName                 = IdString(vsrcName);
-        vsrc.mFromNode             = idealNodeId; // global ideal supply node
-        vsrc.mToNode = info.pkgNode; // package-side node feeding R_pkg_eq
-        vsrc.mType   = Vsrc::PACKAGE;
-        vsrc.mV      = 0.0; // voltage value is left to user
+        // global ideal supply node
+        vsrc.mFromNode             = idealNodeId;
+        // package-side node feeding R_pkg_eq
+        vsrc.mToNode               = info.pkgNode;
+        vsrc.mType                 = Vsrc::PACKAGE;
+        vsrc.mV                    = voltage;
 
         graph.mVsrcs.push_back(vsrc);
         ++vsrcCounter;

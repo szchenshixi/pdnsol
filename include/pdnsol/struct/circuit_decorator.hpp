@@ -14,10 +14,14 @@ namespace pdnsol {
 using Json = nlohmann::json;
 
 struct DecoratorConfig {
-    std::string currentConfigPath;
-    std::string voltageConfigPath;
-    std::string voltageSourceLandingLayer;
-    double defaultPkgR;
+    struct VSrcProperty {
+        ScalarType voltage;  // Volt
+        ScalarType packageR; // Ohm
+    };
+    std::string                                   currentConfigPath;
+    std::string                                   voltageConfigPath;
+    std::string                                   voltageSourceLandingLayer;
+    std::unordered_map<std::string, VSrcProperty> voltageSources;
 };
 
 class CircuitDecorator {

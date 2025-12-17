@@ -47,6 +47,8 @@ add_library(
   src/struct/circuit.cpp
   src/struct/circuit_coarsener.cpp
   src/struct/circuit_decorator.cpp
+  src/sanitizer/sanitizer_config.cpp
+  src/sanitizer/sanitizer_circuit.cpp
   src/solver/mna.cpp
   src/solver/solver_basic.cpp)
 

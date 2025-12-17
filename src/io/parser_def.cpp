@@ -14,6 +14,7 @@
 
 #include "pdnsol/io/parser_utils.hpp" // for trim, startsWithIgnoreCase, clamp
 #include "pdnsol/utils/fixed_point_number.hpp"
+#include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
 
@@ -209,22 +210,23 @@ const TechViaGeom* TechDatabase::getViaGeometry(IdString viaName) const {
 }
 
 // TSV geometry
-void TechDatabase::addTsvGeometry(std::string_view tsvName, double diameter_um,
-                                  double height_um) {
-    IdString    id(tsvName);
-    TechTsvGeom g;
-    g.name             = id;
-    g.diameter_um      = diameter_um;
-    g.height_um        = height_um;
-    mTsvGeometries[id] = g;
-}
+// void TechDatabase::addTsvGeometry(std::string_view tsvName, double
+// diameter_um,
+//                                   double height_um) {
+//     IdString    id(tsvName);
+//     TechTsvGeom g;
+//     g.name             = id;
+//     g.diameter_um      = diameter_um;
+//     g.height_um        = height_um;
+//     mTsvGeometries[id] = g;
+// }
 
-const TechDatabase::TechTsvGeom*
-TechDatabase::getTsvGeometry(IdString tsvName) const {
-    auto it = mTsvGeometries.find(tsvName);
-    if (it == mTsvGeometries.end()) return nullptr;
-    return &it->second;
-}
+// const TechDatabase::TechTsvGeom*
+// TechDatabase::getTsvGeometry(IdString tsvName) const {
+//     auto it = mTsvGeometries.find(tsvName);
+//     if (it == mTsvGeometries.end()) return nullptr;
+//     return &it->second;
+// }
 
 // -----------------------------------------------------------------------------
 // CoarsePdnBuilder3D implementation
@@ -234,12 +236,11 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
   TechDatabase& techDb, int gridNx, int gridNy,
   const std::vector<std::string>& powerNetNames,
   const std::vector<std::string>& groundNetNames,
-  const std::vector<std::string>& layerOrder, double defaultPkgResistanceOhm,
+  const std::vector<std::string>& layerOrder,
   const std::string& bumpLayerName)
     : mTechDb(techDb)
     , mGridNx(gridNx)
-    , mGridNy(gridNy)
-    , mDefaultPkgR(defaultPkgResistanceOhm) {
+    , mGridNy(gridNy) {
 
     // 1) Register PDN nets
     for (const std::string& n : powerNetNames) {
@@ -263,14 +264,14 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
     mNumNetLayerComb = mNumNets * mNumLayers;
 
     // 3) Which layer do bumps connect to? default: topmost
-    mBumpLayerIndex = mNumLayers - 1; // By default
-    for (size_t i = 0; i < mLayerOrder.size(); ++i) {
-        IdString layerName = mLayerOrder[i];
-        if (layerName.str() == bumpLayerName) {
-            mBumpLayerIndex = i;
-            break;
-        }
-    }
+    // mBumpLayerIndex = mNumLayers - 1; // By default
+    // for (size_t i = 0; i < mLayerOrder.size(); ++i) {
+    //     IdString layerName = mLayerOrder[i];
+    //     if (layerName.str() == bumpLayerName) {
+    //         mBumpLayerIndex = i;
+    //         break;
+    //     }
+    // }
 }
 
 int CoarsePdnBuilder3D::encodeNetLayer(int netIndex, int layerIndex) const {
@@ -436,8 +437,8 @@ void CoarsePdnBuilder3D::resetForNewBuild() {
     mInPlaneGrids.clear();
     mViaGrids.clear();
     mViaGridLookup.clear();
-    mBumps.clear();
-    mPinParseState.reset();
+    // mBumps.clear();
+    // mPinParseState.reset();
 }
 
 // -----------------------------------------------------------------------------
@@ -526,6 +527,12 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
     std::string currentLayerName;         // updated by "ROUTED <layer>"
     int         currentRouteWidthDbu = 0; // from ROUTED/NEW
 
+    // State for COMPONENTS
+    std::string currentCompInstName;
+    std::string currentCompMacroName;
+    int         currentCompX = -1;
+    int         currentCompY = -1;
+
     std::string line;
     while (std::getline(fin, line)) {
         std::string tline = trim(line);
@@ -559,14 +566,36 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
             continue;
         }
 
-        if (startsWithIgnoreCase(tline, "PINS")) {
-            section = Section::PINS;
-            mPinParseState.reset();
+        // VIAS section
+        // if (startsWithIgnoreCase(tline, "PINS")) {
+        //     section = Section::PINS;
+        //     mPinParseState.reset();
+        //     continue;
+        // }
+        // if (startsWithIgnoreCase(tline, "END PINS")) {
+        //     section = Section::NONE;
+        //     mPinParseState.reset();
+        //     continue;
+        // }
+
+        // For TSVs
+        if (startsWithIgnoreCase(tline, "COMPONENTS")) {
+            section = Section::COMPONENTS;
+            currentCompInstName.clear();
+            currentCompMacroName.clear();
+            currentCompX = -1;
+            currentCompY = -1;
             continue;
         }
-        if (startsWithIgnoreCase(tline, "END PINS")) {
+        if (startsWithIgnoreCase(tline, "END COMPONENTS")) {
             section = Section::NONE;
-            mPinParseState.reset();
+            if (!currentCompInstName.empty() &&
+                !currentCompMacroName.empty()) {
+                addTsvInstance(currentCompInstName,
+                               currentCompMacroName,
+                               currentCompX,
+                               currentCompY);
+            }
             continue;
         }
 
@@ -578,8 +607,15 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
                                   currentLayerName,
                                   currentRouteWidthDbu);
             break;
-        case Section::PINS: handlePinsLine(tline); break;
+        // case Section::PINS: handlePinsLine(tline); break;
         case Section::VIAS: handleViasLine(tline); break;
+        case Section::COMPONENTS:
+            handleComponentsLine(tline,
+                                 currentCompInstName,
+                                 currentCompMacroName,
+                                 currentCompX,
+                                 currentCompY);
+            break;
         default: break;
         }
     }
@@ -840,89 +876,93 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
     }
 }
 
-void CoarsePdnBuilder3D::handlePinsLine(const std::string& line) {
-    std::vector<std::string> tokens = tokenizeDef(line);
-    if (tokens.empty()) return;
+// void CoarsePdnBuilder3D::handlePinsLine(const std::string& line) {
+//     std::vector<std::string> tokens = tokenizeDef(line);
+//     if (tokens.empty()) return;
 
-    std::size_t       i = 0;
-    const std::size_t n = tokens.size();
+//     std::size_t       i = 0;
+//     const std::size_t n = tokens.size();
 
-    // Start of a new PIN definition
-    if (!mPinParseState.inPin) {
-        if (tokens[0] != "-") {
-            // Ignore lines until we see "- pinName"
-            return;
-        }
-        if (n < 2) {
-            return;
-        }
-        mPinParseState.reset();
-        mPinParseState.inPin   = true;
-        mPinParseState.pinName = IdString(stripDefQuotes(tokens[1]));
-        i = 2; // Continue parsing remaining tokens on this line
-    }
+//     // Start of a new PIN definition
+//     if (!mPinParseState.inPin) {
+//         if (tokens[0] != "-") {
+//             // Ignore lines until we see "- pinName"
+//             return;
+//         }
+//         if (n < 2) {
+//             return;
+//         }
+//         mPinParseState.reset();
+//         mPinParseState.inPin   = true;
+//         mPinParseState.pinName = IdString(stripDefQuotes(tokens[1]));
+//         i = 2; // Continue parsing remaining tokens on this line
+//     }
 
-    for (; i < n; ++i) {
-        const std::string& tok = tokens[i];
+//     for (; i < n; ++i) {
+//         const std::string& tok = tokens[i];
 
-        if (tok == ";") {
-            // End of this PIN definition
-            if (mPinParseState.isPowerOrGround && mPinParseState.hasLocation &&
-                mPinParseState.netName.valid()) {
-                auto it = mNetByName.find(mPinParseState.netName);
-                if (it != mNetByName.end()) {
-                    Bump b;
-                    b.netName = mPinParseState.netName;
-                    b.x_um =
-                      static_cast<double>(mPinParseState.xDbu) / mDbuPerMicron;
-                    b.y_um =
-                      static_cast<double>(mPinParseState.yDbu) / mDbuPerMicron;
-                    mBumps.push_back(std::move(b));
-                }
-            }
-            mPinParseState.reset();
-            break;
-        } else if (tok == "NET") {
-            if (i + 1 < n) {
-                mPinParseState.netName = IdString(stripDefQuotes(tokens[++i]));
-                // If the net is in our PDN set, treat as power/ground
-                auto it = mNetByName.find(mPinParseState.netName);
-                if (it != mNetByName.end()) {
-                    mPinParseState.isPowerOrGround = true;
-                }
-            }
-        } else if (tok == "USE") {
-            if (i + 1 < n) {
-                const std::string& useType = tokens[++i];
-                if (useType == "POWER" || useType == "GROUND") {
-                    mPinParseState.isPowerOrGround = true;
-                }
-            }
-        } else if (tok == "PLACED" || tok == "FIXED") {
-            // Look ahead for "( x y )"
-            int         x = 0, y = 0;
-            bool        found = false;
-            std::size_t j     = i + 1;
-            for (; j + 3 < n; ++j) {
-                if (tokens[j] == "(") {
-                    if (parseIntSafe(tokens[j + 1], x) &&
-                        parseIntSafe(tokens[j + 2], y)) {
-                        found = true;
-                    }
-                    break;
-                }
-            }
-            if (found) {
-                mPinParseState.xDbu        = x;
-                mPinParseState.yDbu        = y;
-                mPinParseState.hasLocation = true;
-            }
-        } else {
-            // Ignore other tokens (DIRECTION, LAYER, PORT, '+', etc.)
-            continue;
-        }
-    }
-}
+//         if (tok == ";") {
+//             // End of this PIN definition
+//             if (mPinParseState.isPowerOrGround && mPinParseState.hasLocation
+//             &&
+//                 mPinParseState.netName.valid()) {
+//                 auto it = mNetByName.find(mPinParseState.netName);
+//                 if (it != mNetByName.end()) {
+//                     Bump b;
+//                     b.netName = mPinParseState.netName;
+//                     b.x_um =
+//                       static_cast<double>(mPinParseState.xDbu) /
+//                       mDbuPerMicron;
+//                     b.y_um =
+//                       static_cast<double>(mPinParseState.yDbu) /
+//                       mDbuPerMicron;
+//                     mBumps.push_back(std::move(b));
+//                 }
+//             }
+//             mPinParseState.reset();
+//             break;
+//         } else if (tok == "NET") {
+//             if (i + 1 < n) {
+//                 mPinParseState.netName =
+//                 IdString(stripDefQuotes(tokens[++i]));
+//                 // If the net is in our PDN set, treat as power/ground
+//                 auto it = mNetByName.find(mPinParseState.netName);
+//                 if (it != mNetByName.end()) {
+//                     mPinParseState.isPowerOrGround = true;
+//                 }
+//             }
+//         } else if (tok == "USE") {
+//             if (i + 1 < n) {
+//                 const std::string& useType = tokens[++i];
+//                 if (useType == "POWER" || useType == "GROUND") {
+//                     mPinParseState.isPowerOrGround = true;
+//                 }
+//             }
+//         } else if (tok == "PLACED" || tok == "FIXED") {
+//             // Look ahead for "( x y )"
+//             int         x = 0, y = 0;
+//             bool        found = false;
+//             std::size_t j     = i + 1;
+//             for (; j + 3 < n; ++j) {
+//                 if (tokens[j] == "(") {
+//                     if (parseIntSafe(tokens[j + 1], x) &&
+//                         parseIntSafe(tokens[j + 2], y)) {
+//                         found = true;
+//                     }
+//                     break;
+//                 }
+//             }
+//             if (found) {
+//                 mPinParseState.xDbu        = x;
+//                 mPinParseState.yDbu        = y;
+//                 mPinParseState.hasLocation = true;
+//             }
+//         } else {
+//             // Ignore other tokens (DIRECTION, LAYER, PORT, '+', etc.)
+//             continue;
+//         }
+//     }
+// }
 
 void CoarsePdnBuilder3D::handleViasLine(const std::string& line) {
     std::vector<std::string> tokens = tokenizeDef(line);
@@ -1016,6 +1056,61 @@ void CoarsePdnBuilder3D::handleViasLine(const std::string& line) {
                                       enclosureTopY,
                                       rows,
                                       cols);
+    }
+}
+
+// For example:
+// - U_TSV_PG_Power1_VDD_PERI_MEDIA1_0 TSV_PG_POWER1
+// + FIXED ( 100 1993000 ) N ;
+void CoarsePdnBuilder3D::handleComponentsLine(const std::string& line,
+                                              std::string& currentInstName,
+                                              std::string& currentMacroName,
+                                              int& currentX, int& currentY) {
+    std::vector<std::string> tokens = tokenizeDef(line);
+    if (tokens.empty()) return;
+
+    // Start of a new component: "- <instName> <macroName> ..."
+    if (tokens[0] == "-") {
+        // Finalize previous component (if any)
+        if (!currentInstName.empty() && !currentMacroName.empty()) {
+            addTsvInstance(
+              currentInstName, currentMacroName, currentX, currentY);
+        }
+
+        currentInstName.clear();
+        currentMacroName.clear();
+        currentX = currentY = 0;
+
+        if (tokens.size() >= 3) {
+            currentInstName  = stripDefQuotes(tokens[1]);
+            currentMacroName = stripDefQuotes(tokens[2]);
+        }
+        return;
+    }
+
+    // Look for "+ FIXED ( x y )" or "+ PLACED ( x y )"
+    std::size_t       i = 0;
+    const std::size_t n = tokens.size();
+    while (i < n) {
+        const std::string& tok = tokens[i];
+
+        if ((tok == "FIXED" || tok == "PLACED") && i + 4 < n) {
+            // Expect: FIXED ( x y ) <orient>
+            if (tokens[i + 1] != "(") {
+                ++i;
+                continue;
+            }
+            int x = 0, y = 0;
+            if (!parseIntSafe(tokens[i + 2], x) ||
+                !parseIntSafe(tokens[i + 3], y)) {
+                break;
+            }
+            currentX = x;
+            currentY = y;
+            break;
+        }
+
+        ++i;
     }
 }
 
@@ -1188,6 +1283,104 @@ void CoarsePdnBuilder3D::addViaInstance(const std::string& netName,
     }
 
     vg.g(ix, iy) += 1.0 / via->resistance;
+}
+
+// Get the "VDD_PERI_MEDIA1" part out of U_TSV_PG_Power1_VDD_PERI_MEDIA1_0
+static std::string extractNetNameFromInstance(const std::string& instName,
+                                              const std::string& macroName) {
+    // The pattern is: U_{macro}_{net}_X (where X is usually a number)
+
+    // Remove "U_" prefix
+    if (instName.substr(0, 2) != "U_") {
+        return "";
+    }
+
+    // Find the position after the macro name
+    std::string macroPattern = macroName;
+    std::transform(macroPattern.begin(),
+                   macroPattern.end(),
+                   macroPattern.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    std::string instLower = instName.substr(2); // Skip "U_"
+    std::transform(instLower.begin(),
+                   instLower.end(),
+                   instLower.begin(),
+                   [](unsigned char c) { return std::tolower(c); });
+
+    // Find macro name in the instance (case-insensitive)
+    size_t macroPos = instLower.find(macroPattern);
+    if (macroPos == std::string::npos) {
+        return "";
+    }
+
+    // Position after macro name
+    size_t afterMacro = macroPos + macroPattern.length();
+
+    // Skip underscores after macro name
+    while (afterMacro < instName.length() - 2 && instName[afterMacro] == '_') {
+        afterMacro++;
+    }
+
+    // Find the last underscore before the trailing number
+    size_t lastUnderscore = instName.rfind('_');
+    if (lastUnderscore <= afterMacro) {
+        return "";
+    }
+
+    // Extract net name
+    return instName.substr(afterMacro, lastUnderscore - afterMacro);
+}
+
+// For example:
+// U_TSV_PG_Power1_VDD_PERI_MEDIA1_0 TSV_PG_POWER1 100 1993000
+void CoarsePdnBuilder3D::addTsvInstance(const std::string& instName,
+                                        const std::string& macroName, int xDbu,
+                                        int yDbu) {
+    const TechTsv* tsv = mTechDb.getTsv(IdString::tryLookup(macroName));
+    if (!tsv) return; // Not a TSV
+
+    if (xDbu < 0 || yDbu < 0) {
+        PDN_WARN("Found a TSV without coordinates. Skip.");
+    }
+
+    std::string netName = extractNetNameFromInstance(instName, macroName);
+    if (netName.empty()) {
+        PDN_WARN("Failed to extract net name from instance: %s",
+                 instName.c_str());
+        return;
+    }
+
+    auto netIt = mNetByName.find(IdString::tryLookup(netName));
+    if (netIt == mNetByName.end()) return;
+    int netIndex = netIt->second.index;
+
+    auto blIt = mLayerNameToIndex.find(tsv->bottomLayer);
+    auto tlIt = mLayerNameToIndex.find(tsv->topLayer);
+    if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
+        return;
+
+    int lb = blIt->second;
+    int lt = tlIt->second;
+
+    if (mInPlaneGrids.empty() || lb < 0 || lb >= mNumLayers) return;
+
+    const ConductanceGrid2D& gridRef = mInPlaneGrids[netIndex][lb];
+    const int                nx      = gridRef.nx;
+    const int                ny      = gridRef.ny;
+
+    double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
+    double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
+
+    int ix =
+      clamp(static_cast<int>((x_um - gridRef.xMin) / gridRef.dx), 0, nx - 1);
+    int iy =
+      clamp(static_cast<int>((y_um - gridRef.yMin) / gridRef.dy), 0, ny - 1);
+
+    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
+
+    if (tsv->resistance <= 0.0) return; // Avoid division by zero
+    vg.g(ix, iy) += 1.0 / tsv->resistance;
 }
 
 ViaGrid3D& CoarsePdnBuilder3D::getOrCreateViaGrid(int netIndex, int lb,
@@ -1386,59 +1579,59 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
     }
 
     // 3) Create bump nodes and package resistors
-    int bumpCounter = 0;
-    for (const Bump& b : mBumps) {
-        auto netIt = mNetByName.find(b.netName);
-        if (netIt == mNetByName.end()) continue;
+    // int bumpCounter = 0;
+    // for (const Bump& b : mBumps) {
+    //     auto netIt = mNetByName.find(b.netName);
+    //     if (netIt == mNetByName.end()) continue;
 
-        const NetInfo& ni       = netIt->second;
-        int            netIndex = ni.index;
+    //     const NetInfo& ni       = netIt->second;
+    //     int            netIndex = ni.index;
 
-        ConductanceGrid2D& attachGrid =
-          mInPlaneGrids[netIndex][mBumpLayerIndex];
-        const int nx = attachGrid.nx;
-        const int ny = attachGrid.ny;
+    //     ConductanceGrid2D& attachGrid =
+    //       mInPlaneGrids[netIndex][mBumpLayerIndex];
+    //     const int nx = attachGrid.nx;
+    //     const int ny = attachGrid.ny;
 
-        int ix =
-          clamp(static_cast<int>((b.x_um - attachGrid.xMin) / attachGrid.dx),
-                0,
-                nx - 1);
-        int iy =
-          clamp(static_cast<int>((b.y_um - attachGrid.yMin) / attachGrid.dy),
-                0,
-                ny - 1);
+    //     int ix =
+    //       clamp(static_cast<int>((b.x_um - attachGrid.xMin) / attachGrid.dx),
+    //             0,
+    //             nx - 1);
+    //     int iy =
+    //       clamp(static_cast<int>((b.y_um - attachGrid.yMin) / attachGrid.dy),
+    //             0,
+    //             ny - 1);
 
-        IdString tileId = tileNodeIds[netIndex][mBumpLayerIndex]
-                                     [static_cast<std::size_t>(iy * nx + ix)];
+    //     IdString tileId = tileNodeIds[netIndex][mBumpLayerIndex]
+    //                                  [static_cast<std::size_t>(iy * nx + ix)];
 
-        // Bump node
-        std::ostringstream ossBumpName;
-        ossBumpName << ni.name.str() << "_BUMP_" << bumpCounter;
-        IdString bumpNodeId(ossBumpName.str());
+    //     // Bump node
+    //     std::ostringstream ossBumpName;
+    //     ossBumpName << ni.name.str() << "_BUMP_" << bumpCounter;
+    //     IdString bumpNodeId(ossBumpName.str());
 
-        int netLayerCode = encodeNetLayer(netIndex, mBumpLayerIndex);
+    //     int netLayerCode = encodeNetLayer(netIndex, mBumpLayerIndex);
 
-        Node bumpNode;
-        bumpNode.mName = bumpNodeId;
-        bumpNode.mNet  = NetId(netLayerCode);
-        bumpNode.mX    = FPN::toRep(b.x_um);
-        bumpNode.mY    = FPN::toRep(b.y_um);
-        graph.mNodes.emplace(bumpNodeId, bumpNode);
+    //     Node bumpNode;
+    //     bumpNode.mName = bumpNodeId;
+    //     bumpNode.mNet  = NetId(netLayerCode);
+    //     bumpNode.mX    = FPN::toRep(b.x_um);
+    //     bumpNode.mY    = FPN::toRep(b.y_um);
+    //     graph.mNodes.emplace(bumpNodeId, bumpNode);
 
-        // Package resistor
-        std::ostringstream ossPkgName;
-        ossPkgName << ni.name.str() << "_PKG_" << bumpCounter;
-        IdString pkgId(ossPkgName.str());
+    //     // Package resistor
+    //     std::ostringstream ossPkgName;
+    //     ossPkgName << ni.name.str() << "_PKG_" << bumpCounter;
+    //     IdString pkgId(ossPkgName.str());
 
-        PkgRes pr;
-        pr.mName = pkgId;
-        pr.mN1   = bumpNodeId;
-        pr.mN2   = tileId;
-        pr.mR    = mDefaultPkgR;
-        graph.mPkgResistors.push_back(std::move(pr));
+    //     PkgRes pr;
+    //     pr.mName = pkgId;
+    //     pr.mN1   = bumpNodeId;
+    //     pr.mN2   = tileId;
+    //     pr.mR    = mDefaultPkgR;
+    //     graph.mPkgResistors.push_back(std::move(pr));
 
-        ++bumpCounter;
-    }
+    //     ++bumpCounter;
+    // }
 }
 
 // -----------------------------------------------------------------------------

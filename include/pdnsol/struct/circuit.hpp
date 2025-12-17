@@ -16,7 +16,7 @@ class NetId {
         : value{v} {}
 
     constexpr int      get() const noexcept { return value; }
-    constexpr explicit operator bool() const noexcept { return value > 0; }
+    constexpr explicit operator bool() const noexcept { return value >= 0; }
 
     // Comparisons
     friend constexpr bool operator==(NetId a, NetId b) noexcept {
@@ -39,11 +39,6 @@ struct NetKey {
     bool     isPower;
     bool     isGround;
 
-    // bool isPower() const {
-    //     std::string netName = toLower(name.str());
-    //     if (netName.find("vdd") != std::string::npos) return true;
-    //     return false;
-    // }
     struct Hash {
         std::size_t operator()(const NetKey& v) const {
             std::size_t h1 = IdString::Hash{}(v.layer);
@@ -128,11 +123,9 @@ struct CircuitGraph {
     std::vector<SectionMeta> mSections;
     IdStringMap              mMetadata;
 
-  private:
     std::unordered_map<NetKey, NetId, NetKey::Hash> mNet2Id; // Net to its id
     std::vector<NetKey>                             mId2Net;
 
-  public:
     NetId  netId(IdString layer, IdString name) const;
     NetKey netKey(NetId netId) const;
     NetId  registerNet(IdString layer, IdString name, bool isPwr, bool isGnd);

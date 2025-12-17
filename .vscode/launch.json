@@ -34,7 +34,7 @@
             "request": "launch",
             "program": "${workspaceFolder}/build/pdnsol_def",
             "args": [
-                "${workspaceFolder}/test/data/simulation.json"
+                "${workspaceFolder}/test/data/def_related/simulation.json"
             ],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

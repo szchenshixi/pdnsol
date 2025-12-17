@@ -86,6 +86,13 @@ struct TechViaGeom {
     int cols             = 1; // ROWCOL
 };
 
+// TSV geometry extension point (minimal, but allows you to fill later)
+// struct TechTsvGeom {
+//     IdString name;
+//     double   diameter_um = 0.0;
+//     double   height_um   = 0.0;
+// };
+
 class TechDatabase {
   public:
     // Metal layers
@@ -100,7 +107,7 @@ class TechDatabase {
 
     const TechVia* getVia(IdString viaName) const;
 
-    // TSVs (extension point)
+    // TSVs
     void addTsv(std::string_view tsvName, std::string_view bottomLayer,
                 std::string_view topLayer, double resistance_ohm);
 
@@ -116,17 +123,10 @@ class TechDatabase {
 
     const TechViaGeom* getViaGeometry(IdString viaName) const;
 
-    // TSV geometry extension point (minimal, but allows you to fill later)
-    struct TechTsvGeom {
-        IdString name;
-        double   diameter_um = 0.0;
-        double   height_um   = 0.0;
-    };
+    // void addTsvGeometry(std::string_view tsvName, double diameter_um,
+    //                     double height_um);
 
-    void addTsvGeometry(std::string_view tsvName, double diameter_um,
-                        double height_um);
-
-    const TechTsvGeom* getTsvGeometry(IdString tsvName) const;
+    // const TechTsvGeom* getTsvGeometry(IdString tsvName) const;
 
   private:
     std::unordered_map<IdString, TechLayer, IdString::Hash> mLayers;
@@ -134,7 +134,8 @@ class TechDatabase {
     std::unordered_map<IdString, TechTsv, IdString::Hash>   mTsvs;
 
     std::unordered_map<IdString, TechViaGeom, IdString::Hash> mViaGeometries;
-    std::unordered_map<IdString, TechTsvGeom, IdString::Hash> mTsvGeometries;
+    // std::unordered_map<IdString, TechTsvGeom, IdString::Hash>
+    // mTsvGeometries;
 };
 
 // -----------------------------------------------------------------------------
@@ -212,8 +213,7 @@ class CoarsePdnBuilder3D {
                        const std::vector<std::string>& powerNetNames,
                        const std::vector<std::string>& groundNetNames,
                        const std::vector<std::string>& layerOrder,
-                       double             defaultPkgResistanceOhm = 0.0,
-                       const std::string& bumpLayerName           = "");
+                       const std::string&              bumpLayerName = "");
 
     // Encode (netIndex, layerIndex) into Node.mNet and MetalRes.mNet
     int encodeNetLayer(int netIndex, int layerIndex) const;
@@ -222,7 +222,6 @@ class CoarsePdnBuilder3D {
     bool buildCoarsePdnFromDef(const std::string& defPath,
                                CircuitGraph&      outGraph);
 
-    // TSV extension hook:
     //   You can call this from external TSV parsing code (not from DEF).
     //   It will reuse the same vertical conductance accumulation as vias.
     void addTsvInstance(const std::string& netName, const std::string& tsvName,
@@ -263,7 +262,7 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // DEF parsing: PDN stripes, vias, and bumps
     // -----------------------------------------------------------------
-    enum class Section { NONE, SPECIALNETS, PINS, VIAS };
+    enum class Section { NONE, SPECIALNETS, PINS, VIAS, COMPONENTS };
 
     bool parseDefPdnAndBumps(const std::string& defPath);
 
@@ -272,10 +271,12 @@ class CoarsePdnBuilder3D {
                                bool&              currentNetIsPdn,
                                std::string&       currentLayerName,
                                int&               currentRouteWidthDbu);
-
-    void handlePinsLine(const std::string& line);
-
+    // void handlePinsLine(const std::string& line);
     void handleViasLine(const std::string& line);
+    void handleComponentsLine(const std::string& line,
+                              std::string&       currentInstName,
+                              std::string& currentMacroName, int& currentX,
+                              int& currentY);
 
     // -----------------------------------------------------------------
     // Stripe accumulation per (net,layer)
@@ -297,6 +298,8 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     void addViaInstance(const std::string& netName, const std::string& viaName,
                         int xDbu, int yDbu);
+    void addTsvInstance(const std::string& instName,
+                        const std::string& macroName, int xDbu, int yDbu);
 
     ViaGrid3D& getOrCreateViaGrid(int netIndex, int lb, int lt);
 
@@ -351,9 +354,6 @@ class CoarsePdnBuilder3D {
 
     int mNumNetLayerComb = 0;
 
-    // Bump attaches to this layer index (default: topmost)
-    int mBumpLayerIndex = 0;
-
     // DEF geometry
     double mDbuPerMicron = 1.0;
     double mDieXMinUm    = 0.0;
@@ -369,31 +369,46 @@ class CoarsePdnBuilder3D {
     std::unordered_map<std::uint64_t, int> mViaGridLookup;
 
     // Bumps from PINS section
-    std::vector<Bump> mBumps;
+    // std::vector<Bump> mBumps;
 
     // State for parsing multi-line PINS entries.
-    struct PinParseState {
-        IdString pinName;
-        IdString netName;
-        bool     isPowerOrGround = false;
-        bool     hasLocation     = false;
-        int      xDbu            = 0;
-        int      yDbu            = 0;
-        bool     inPin           = false;
+    // struct PinParseState {
+    //     IdString pinName;
+    //     IdString netName;
+    //     bool     isPowerOrGround = false;
+    //     bool     hasLocation     = false;
+    //     int      xDbu            = 0;
+    //     int      yDbu            = 0;
+    //     bool     inPin           = false;
 
-        void reset() {
-            pinName         = IdString();
-            netName         = IdString();
-            isPowerOrGround = false;
-            hasLocation     = false;
-            xDbu            = 0;
-            yDbu            = 0;
-            inPin           = false;
-        }
-    };
+    //     void reset() {
+    //         pinName         = IdString();
+    //         netName         = IdString();
+    //         isPowerOrGround = false;
+    //         hasLocation     = false;
+    //         xDbu            = 0;
+    //         yDbu            = 0;
+    //         inPin           = false;
+    //     }
+    // };
 
     // PINS parsing state (multi-line support)
-    PinParseState mPinParseState;
+    // PinParseState mPinParseState;
+
+    // struct ComponentParseState {
+    //     std::string instName;  // instance name, e.g. "U_TSV_PG_0"
+    //     std::string macroName; // master name, e.g. "TSV_PG_Power1"
+    //     bool isTsv = false;    // whether this component is a TSV we care
+    //     about
+
+    //     void reset() {
+    //         instName.clear();
+    //         macroName.clear();
+    //         isTsv = false;
+    //     }
+    // };
+
+    // ComponentParseState mComponentParseState;
 };
 
 // Inline accessors for small structs
