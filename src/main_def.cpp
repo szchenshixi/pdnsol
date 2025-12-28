@@ -2,6 +2,7 @@
 #include <iostream>
 #include <unordered_set>
 
+#include "pdnsol/io/exporter_viz.hpp"
 #include "pdnsol/io/parser_def.hpp"
 #include "pdnsol/sanitizer/sanitizer_circuit.hpp"
 #include "pdnsol/sanitizer/sanitizer_config.hpp"
@@ -109,23 +110,33 @@ int main(int argc, char** argv) {
     // 3) Simulation Configuration
     // ============================================================
 
-    const Json&        simConfigJ = configJ["simulation"];
-    const int          gridNx     = simConfigJ["grid_Nx"];
-    const int          gridNy     = simConfigJ["grid_Ny"];
-    const std::string& bumpLayer  = simConfigJ["bump_layer"];
+    const Json& simConfigJ    = configJ["simulation"];
+    const Json& gridConfigJ   = simConfigJ["grid"];
+    const int   defaultGridNx = gridConfigJ["default"]["nx"];
+    const int   defaultGridNy = gridConfigJ["default"]["ny"];
+    IdString::Map<LayerGridResolution> perLayerGridRes;
+    for (const auto& [l, j] : gridConfigJ.items()) {
+        IdString layerName         = IdString(l);
+        perLayerGridRes[layerName] = LayerGridResolution{j["nx"], j["ny"]};
+    }
 
-    CoarsePdnBuilder3D builder(
-      techDb, gridNx, gridNy, powerNets, groundNets, layerOrder, bumpLayer);
+    CoarsePdnBuilder3D builder(techDb,
+                               defaultGridNx,
+                               defaultGridNy,
+                               perLayerGridRes,
+                               powerNets,
+                               groundNets,
+                               layerOrder);
 
     // ============================================================
     // 4) Circuit Construction
     // ============================================================
 
-    const Json&        fileConfigJ         = configJ["file"];
-    const std::string& defPath             = fileConfigJ["def_path"];
-    const std::string& currentSrcPath      = fileConfigJ["current_src_path"];
-    const std::string& voltageSrcPath      = fileConfigJ["voltage_src_path"];
-    const std::string& voltageLandingLayer = simConfigJ["bump_layer"];
+    const Json&        fileConfigJ    = configJ["file"];
+    const std::string& defPath        = fileConfigJ["def_path"];
+    const std::string& currentSrcPath = fileConfigJ["current_src_path"];
+    const std::string& voltageSrcPath = fileConfigJ["voltage_src_path"];
+    const std::string& bumpLayer      = simConfigJ["bump_layer"];
 
     CircuitGraph circ;
     if (!builder.buildCoarsePdnFromDef(defPath, circ)) {
@@ -136,7 +147,7 @@ int main(int argc, char** argv) {
     DecoratorConfig decoratorConfig;
     decoratorConfig.currentConfigPath         = currentSrcPath;
     decoratorConfig.voltageConfigPath         = voltageSrcPath;
-    decoratorConfig.voltageSourceLandingLayer = voltageLandingLayer;
+    decoratorConfig.voltageSourceLandingLayer = bumpLayer;
     decoratorConfig.voltageSources            = std::move(vsrcs);
     CircuitDecorator decorator(circ, decoratorConfig);
     decorator.build();
@@ -163,13 +174,14 @@ int main(int argc, char** argv) {
     CircuitConnectivityChecker checker;
 
     // Option 1: Get comprehensive diagnostic
-    // auto diagnostic = checker.checkIsolation(circ);
+    auto diagnostic = checker.checkIsolation(circ);
 
     // Option 2: Get just isolated nodes
-    // auto isolatedNodes = checker.findIsolatedNodes(circ);
+    auto isolatedNodes = checker.findIsolatedNodes(circ);
 
     // Option 3: Generate full report
     std::string report = checker.generateReport(circ);
     std::cout << report;
+
     return 0;
 }

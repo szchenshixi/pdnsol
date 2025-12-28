@@ -123,7 +123,7 @@ void recordNetSection(CircuitGraph& circ, const SpefState& st) {
     meta.mNet = IdString(st.currentNetName);
     meta.mFromNet = IdString(""); // not used
     meta.mToNet = IdString("");   // not used
-    meta.mRaw = IdString("");     // could store full "*D_NET" line if needed
+    meta.mRaw = "";     // could store full "*D_NET" line if needed
     circ.mSections.push_back(std::move(meta));
 }
 

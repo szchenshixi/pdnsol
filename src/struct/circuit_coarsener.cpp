@@ -12,14 +12,15 @@ namespace pdnsol {
 CircuitCoarsener::CircuitCoarsener(const CircuitGraph&      inGraph,
                                    const CoarseModelConfig& cfg)
     : mIn(inGraph)
-    , mCfg(cfg) {
-}
+    , mCfg(cfg) {}
 
 CircuitGraph CircuitCoarsener::build() {
     CircuitGraph out;
     out.mCoordinateUnit = mIn.mCoordinateUnit;
     out.mMetadata       = mIn.mMetadata;
     out.mSections       = mIn.mSections; // logical PDN description is reused
+    out.mNet2Id         = mIn.mNet2Id;
+    out.mId2Net         = mIn.mId2Net;
 
     if (mIn.mNodes.empty()) return out; // trivial
 
@@ -159,7 +160,7 @@ void CircuitCoarsener::bumpNodeMode(IdString         nodeId,
 // Node mapping
 // -----------------------------------------------------------------------------
 
-NodeMap& CircuitCoarsener::outNodes() {
+IdString::Map<Node>& CircuitCoarsener::outNodes() {
     assert(mOutPtr && "Output graph pointer not set");
     return mOutPtr->mNodes;
 }

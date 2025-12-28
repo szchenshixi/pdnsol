@@ -1,3 +1,4 @@
+#include "pdnsol/io/exporter_viz.hpp"
 #include "pdnsol/io/parser_spef.hpp"
 #include "pdnsol/io/parser_spice.hpp"
 #include "pdnsol/solver/solver_basic.hpp"
@@ -35,7 +36,7 @@ int main() {
                      "ibmpg/6/ibmpg6.spice");
     // CircuitGraph
     CoarseModelConfig cfg;
-    cfg.tileSizeUm = 5000.0;
+    cfg.tileSizeUm = 200000.0;
 
     // Suppose your MetalRes::mName for layers are something like:
     // "M1_VDD", "M2_VDD", ..., "M9_VDD", and similarly for VSS.
@@ -54,7 +55,7 @@ int main() {
     CircuitGraph     ccirc = coarsener.build();
     ccirc.purgeParallelElements();
 
-    {
+    if (false) {
         PERF_STATS("Solving full circuit");
         PDN_INFO("Starting solving full circuit with %'d nodes",
                  fcirc.mNodes.size());
@@ -80,6 +81,7 @@ int main() {
           buildIRDropHeatmapsMultiNet(ccirc, csol, heatmapCfg);
         // 4. Export
         writeAllHeatmapsToPng(chm, "work_coarse", /*useMaxValue=*/true);
+        exportCircuitGraphForVizJson(ccirc, "viz_output/viz.json");
     }
 
     return 0;

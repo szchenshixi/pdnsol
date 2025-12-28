@@ -98,149 +98,79 @@ void ConductanceGrid2D::init(int nx_, int ny_, double xMin_, double xMax_,
 // ViaGrid3D implementation
 // -----------------------------------------------------------------------------
 
-void ViaGrid3D::init(int netIdx, int lb, int lt, int nx_, int ny_) {
+void ViaGrid3D::init(int netIdx, int lb, int lt, int bNx, int bNy, int tNx,
+                     int tNy) {
     netIndex       = netIdx;
     bottomLayerIdx = lb;
     topLayerIdx    = lt;
-    nx             = nx_;
-    ny             = ny_;
-    G.assign(static_cast<std::size_t>(nx * ny), 0.0);
+
+    bottomNx = bNx;
+    bottomNy = bNy;
+    topNx    = tNx;
+    topNy    = tNy;
+
+    edgeG.clear();
 }
 
-// -----------------------------------------------------------------------------
-// TechDatabase implementation
-// -----------------------------------------------------------------------------
+void ViaGrid3D::addConductance(int bIx, int bIy, int tIx, int tIy, double dG) {
+    if (dG <= 0.0) return;
 
-// Metal layers
-void TechDatabase::addLayer(std::string_view name, double resistivity_ohm_um,
-                            double thickness_um) {
-    IdString  nameId(name);
-    TechLayer layer{nameId, resistivity_ohm_um, thickness_um};
-    mLayers[nameId] = layer;
+    PDN_FATAL_IF(bIx < 0 || bIx >= bottomNx,
+                 "Bottom-X index %d beyond scope (0, %d)",
+                 bIx,
+                 bottomNx);
+    PDN_FATAL_IF(bIy < 0 || bIy >= bottomNy,
+                 "Bottom-Y index %d beyond scope (0, %d)",
+                 bIy,
+                 bottomNy);
+    PDN_FATAL_IF(tIx < 0 || tIx >= topNx,
+                 "Top-X index %d beyond scope (0, %d)",
+                 tIx,
+                 topNx);
+    PDN_FATAL_IF(tIy < 0 || tIy >= topNy,
+                 "Top-Y index %d beyond scope (0, %d)",
+                 tIy,
+                 topNy);
+
+    const std::uint32_t bFlat =
+      static_cast<std::uint32_t>(bIy * bottomNx + bIx);
+    const std::uint32_t tFlat = static_cast<std::uint32_t>(tIy * topNx + tIx);
+
+    edgeG[packEdge(bFlat, tFlat)] += dG; // parallel vias add conductance
 }
 
-const TechLayer* TechDatabase::getLayer(IdString name) const {
-    auto it = mLayers.find(name);
-    if (it == mLayers.end()) return nullptr;
-    return &it->second;
-}
+struct TileNodeIdGrid {
+    int                   nx = 0;
+    int                   ny = 0;
+    std::vector<IdString> ids; // size = nx*ny
 
-// Vias
-void TechDatabase::addVia(std::string_view viaName,
-                          std::string_view bottomLayer,
-                          std::string_view topLayer, double resistance_ohm) {
-    IdString viaNameId(viaName);
-    IdString bottomLayerId(bottomLayer);
-    IdString topLayerId(topLayer);
-    TechVia  v{viaNameId, bottomLayerId, topLayerId, resistance_ohm};
-    mVias[viaNameId] = v;
-}
-
-const TechVia* TechDatabase::getVia(IdString viaName) const {
-    auto it = mVias.find(viaName);
-    if (it == mVias.end()) return nullptr;
-    return &it->second;
-}
-
-// TSVs
-void TechDatabase::addTsv(std::string_view tsvName,
-                          std::string_view bottomLayer,
-                          std::string_view topLayer, double resistance_ohm) {
-    IdString tsvNameId(tsvName);
-    IdString bottomLayerId(bottomLayer);
-    IdString topLayerId(topLayer);
-    TechTsv  t{tsvNameId, bottomLayerId, topLayerId, resistance_ohm};
-    mTsvs[tsvNameId] = t;
-}
-
-const TechTsv* TechDatabase::getTsv(IdString tsvName) const {
-    auto it = mTsvs.find(tsvName);
-    if (it == mTsvs.end()) return nullptr;
-    return &it->second;
-}
-
-// Via geometry from DEF "VIAS" section
-void TechDatabase::addViaGeometryFromDef(
-  std::string_view viaName, std::string_view viaRuleName,
-  std::string_view bottomLayer, std::string_view cutLayer,
-  std::string_view topLayer, int cutSizeX, int cutSizeY, int cutSpacingX,
-  int cutSpacingY, int enclosureBottomX, int enclosureBottomY,
-  int enclosureTopX, int enclosureTopY, int rows, int cols) {
-    IdString viaId(viaName);
-
-    TechViaGeom g;
-    g.name             = viaId;
-    g.viaRuleName      = IdString(viaRuleName);
-    g.bottomLayer      = IdString(bottomLayer);
-    g.cutLayer         = IdString(cutLayer);
-    g.topLayer         = IdString(topLayer);
-    g.cutSizeX         = cutSizeX;
-    g.cutSizeY         = cutSizeY;
-    g.cutSpacingX      = cutSpacingX;
-    g.cutSpacingY      = cutSpacingY;
-    g.enclosureBottomX = enclosureBottomX;
-    g.enclosureBottomY = enclosureBottomY;
-    g.enclosureTopX    = enclosureTopX;
-    g.enclosureTopY    = enclosureTopY;
-    g.rows             = rows;
-    g.cols             = cols;
-
-    mViaGeometries[viaId] = g;
-
-    // Make sure basic via connectivity exists as TechVia as well.
-    auto it = mVias.find(viaId);
-    if (it == mVias.end()) {
-        TechVia v;
-        v.name        = viaId;
-        v.bottomLayer = g.bottomLayer;
-        v.topLayer    = g.topLayer;
-        v.resistance  = 0.0; // placeholder, can be filled separately
-        mVias.emplace(viaId, v);
-    } else {
-        // Keep connectivity consistent if already present
-        it->second.bottomLayer = g.bottomLayer;
-        it->second.topLayer    = g.topLayer;
+    void init(int nx_, int ny_) {
+        nx = nx_;
+        ny = ny_;
+        ids.assign(static_cast<std::size_t>(nx * ny), IdString());
     }
-}
 
-const TechViaGeom* TechDatabase::getViaGeometry(IdString viaName) const {
-    auto it = mViaGeometries.find(viaName);
-    if (it == mViaGeometries.end()) return nullptr;
-    return &it->second;
-}
-
-// TSV geometry
-// void TechDatabase::addTsvGeometry(std::string_view tsvName, double
-// diameter_um,
-//                                   double height_um) {
-//     IdString    id(tsvName);
-//     TechTsvGeom g;
-//     g.name             = id;
-//     g.diameter_um      = diameter_um;
-//     g.height_um        = height_um;
-//     mTsvGeometries[id] = g;
-// }
-
-// const TechDatabase::TechTsvGeom*
-// TechDatabase::getTsvGeometry(IdString tsvName) const {
-//     auto it = mTsvGeometries.find(tsvName);
-//     if (it == mTsvGeometries.end()) return nullptr;
-//     return &it->second;
-// }
+    IdString& at(int ix, int iy) {
+        return ids[static_cast<std::size_t>(iy * nx + ix)];
+    }
+    const IdString& at(int ix, int iy) const {
+        return ids[static_cast<std::size_t>(iy * nx + ix)];
+    }
+};
 
 // -----------------------------------------------------------------------------
 // CoarsePdnBuilder3D implementation
 // -----------------------------------------------------------------------------
 
 CoarsePdnBuilder3D::CoarsePdnBuilder3D(
-  TechDatabase& techDb, int gridNx, int gridNy,
-  const std::vector<std::string>& powerNetNames,
-  const std::vector<std::string>& groundNetNames,
-  const std::vector<std::string>& layerOrder,
-  const std::string& bumpLayerName)
+  TechDatabase& techDb, int defaultGridNx, int defaultGridNy,
+  const IdString::Map<LayerGridResolution>& perLayerRes,
+  const std::vector<std::string>&           powerNetNames,
+  const std::vector<std::string>&           groundNetNames,
+  const std::vector<std::string>&           layerOrder)
     : mTechDb(techDb)
-    , mGridNx(gridNx)
-    , mGridNy(gridNy) {
+    , mDefaultGridNx(defaultGridNx)
+    , mDefaultGridNy(defaultGridNy) {
 
     // 1) Register PDN nets
     for (const std::string& n : powerNetNames) {
@@ -259,19 +189,25 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
         mLayerOrder.push_back(layerId);
         mLayerNameToIndex[layerId] = static_cast<int>(i);
     }
-    mNumLayers = static_cast<int>(mLayerOrder.size());
-
+    mNumLayers       = static_cast<int>(mLayerOrder.size());
     mNumNetLayerComb = mNumNets * mNumLayers;
+    // 3) Resolve per-layer grid resolutions (NEW)
+    mLayerGridRes.resize(static_cast<std::size_t>(mNumLayers));
+    for (int l = 0; l < mNumLayers; ++l) {
+        IdString lname = mLayerOrder[l];
+        auto     it    = perLayerRes.find(lname);
+        if (it != perLayerRes.end()) {
+            mLayerGridRes[l] = it->second;
+        } else {
+            mLayerGridRes[l] =
+              LayerGridResolution{mDefaultGridNx, mDefaultGridNy};
+        }
 
-    // 3) Which layer do bumps connect to? default: topmost
-    // mBumpLayerIndex = mNumLayers - 1; // By default
-    // for (size_t i = 0; i < mLayerOrder.size(); ++i) {
-    //     IdString layerName = mLayerOrder[i];
-    //     if (layerName.str() == bumpLayerName) {
-    //         mBumpLayerIndex = i;
-    //         break;
-    //     }
-    // }
+        if (mLayerGridRes[l].nx <= 0 || mLayerGridRes[l].ny <= 0) {
+            throw std::runtime_error("Invalid grid resolution for layer " +
+                                     lname.str());
+        }
+    }
 }
 
 int CoarsePdnBuilder3D::encodeNetLayer(int netIndex, int layerIndex) const {
@@ -303,45 +239,6 @@ bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string& defPath,
     // Build CircuitGraph from all grids
     buildCircuitGraph(outGraph);
     return true;
-}
-
-// TSV extension hook:
-//   You can call this from external TSV parsing code (not from DEF).
-//   It will reuse the same vertical conductance accumulation as vias.
-void CoarsePdnBuilder3D::addTsvInstance(const std::string& netName,
-                                        const std::string& tsvName,
-                                        double x_um, double y_um) {
-    auto netIt = mNetByName.find(IdString::tryLookup(netName));
-    if (netIt == mNetByName.end()) return;
-    int netIndex = netIt->second.index;
-
-    const TechTsv* tsv = mTechDb.getTsv(IdString::tryLookup(tsvName));
-    if (!tsv) return;
-
-    auto blIt = mLayerNameToIndex.find(tsv->bottomLayer);
-    auto tlIt = mLayerNameToIndex.find(tsv->topLayer);
-    if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
-        return;
-
-    int lb = blIt->second;
-    int lt = tlIt->second;
-
-    if (mInPlaneGrids.empty() || lb < 0 || lb >= mNumLayers) return;
-
-    const ConductanceGrid2D& gridRef = mInPlaneGrids[netIndex][lb];
-    const int                nx      = gridRef.nx;
-    const int                ny      = gridRef.ny;
-
-    int ix =
-      clamp(static_cast<int>((x_um - gridRef.xMin) / gridRef.dx), 0, nx - 1);
-    int iy =
-      clamp(static_cast<int>((y_um - gridRef.yMin) / gridRef.dy), 0, ny - 1);
-
-    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
-
-    if (tsv->resistance <= 0.0) return;
-
-    vg.g(ix, iy) += 1.0 / tsv->resistance;
 }
 
 // -----------------------------------------------------------------------------
@@ -423,8 +320,8 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
 
     for (int n = 0; n < mNumNets; ++n) {
         for (int l = 0; l < mNumLayers; ++l) {
-            mInPlaneGrids[n][l].init(mGridNx,
-                                     mGridNy,
+            mInPlaneGrids[n][l].init(mLayerGridRes[l].nx,
+                                     mLayerGridRes[l].ny,
                                      mDieXMinUm,
                                      mDieXMaxUm,
                                      mDieYMinUm,
@@ -482,8 +379,7 @@ void CoarsePdnBuilder3D::addStripeFromSegment(const std::string& netName,
                                               const std::string& layerName,
                                               int x0, int y0, int x1, int y1,
                                               int widthDbu) {
-    if (widthDbu <= 0)
-        return; // degenerate: used e.g. for via points on met4 0
+    if (widthDbu <= 0) return;
 
     const int half = widthDbu / 2;
 
@@ -565,18 +461,6 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
             section = Section::NONE;
             continue;
         }
-
-        // VIAS section
-        // if (startsWithIgnoreCase(tline, "PINS")) {
-        //     section = Section::PINS;
-        //     mPinParseState.reset();
-        //     continue;
-        // }
-        // if (startsWithIgnoreCase(tline, "END PINS")) {
-        //     section = Section::NONE;
-        //     mPinParseState.reset();
-        //     continue;
-        // }
 
         // For TSVs
         if (startsWithIgnoreCase(tline, "COMPONENTS")) {
@@ -1262,27 +1146,28 @@ void CoarsePdnBuilder3D::addViaInstance(const std::string& netName,
     if (lb < 0 || lb >= mNumLayers || lt < 0 || lt >= mNumLayers) return;
     if (mInPlaneGrids.empty()) return;
 
-    // Use the in-plane grid for the bottom layer to map coordinates
-    const ConductanceGrid2D& gridRef = mInPlaneGrids[netIndex][lb];
-    const int                nx      = gridRef.nx;
-    const int                ny      = gridRef.ny;
+    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
 
     double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
     double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
 
-    int ix =
-      clamp(static_cast<int>((x_um - gridRef.xMin) / gridRef.dx), 0, nx - 1);
-    int iy =
-      clamp(static_cast<int>((y_um - gridRef.yMin) / gridRef.dy), 0, ny - 1);
+    // Use the per-layer grids’ geometry assuming all grids share die bbox
+    const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
+    const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
 
-    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
+    const int bIx =
+      clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
+    const int bIy =
+      clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
 
-    if (via->resistance <= 0.0) {
-        // Avoid division by zero; if you want ideal vias, use a very small R
-        return;
-    }
+    const int tIx =
+      clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
+    const int tIy =
+      clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
 
-    vg.g(ix, iy) += 1.0 / via->resistance;
+    if (via->resistance <= 0.0) return;
+
+    vg.addConductance(bIx, bIy, tIx, tIy, 1.0 / via->resistance);
 }
 
 // Get the "VDD_PERI_MEDIA1" part out of U_TSV_PG_Power1_VDD_PERI_MEDIA1_0
@@ -1365,22 +1250,28 @@ void CoarsePdnBuilder3D::addTsvInstance(const std::string& instName,
 
     if (mInPlaneGrids.empty() || lb < 0 || lb >= mNumLayers) return;
 
-    const ConductanceGrid2D& gridRef = mInPlaneGrids[netIndex][lb];
-    const int                nx      = gridRef.nx;
-    const int                ny      = gridRef.ny;
+    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
 
     double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
     double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
 
-    int ix =
-      clamp(static_cast<int>((x_um - gridRef.xMin) / gridRef.dx), 0, nx - 1);
-    int iy =
-      clamp(static_cast<int>((y_um - gridRef.yMin) / gridRef.dy), 0, ny - 1);
-
-    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
-
-    if (tsv->resistance <= 0.0) return; // Avoid division by zero
-    vg.g(ix, iy) += 1.0 / tsv->resistance;
+        // Use the per-layer grids’ geometry assuming all grids share die bbox
+        const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
+        const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
+    
+        const int bIx =
+          clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
+        const int bIy =
+          clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
+    
+        const int tIx =
+          clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
+        const int tIy =
+          clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
+    
+        if (tsv->resistance <= 0.0) return;
+    
+        vg.addConductance(bIx, bIy, tIx, tIy, 1.0 / tsv->resistance);
 }
 
 ViaGrid3D& CoarsePdnBuilder3D::getOrCreateViaGrid(int netIndex, int lb,
@@ -1391,8 +1282,11 @@ ViaGrid3D& CoarsePdnBuilder3D::getOrCreateViaGrid(int netIndex, int lb,
         return mViaGrids[it->second];
     }
 
+    const LayerGridResolution& bRes = mLayerGridRes[lb];
+    const LayerGridResolution& tRes = mLayerGridRes[lt];
+
     ViaGrid3D vg;
-    vg.init(netIndex, lb, lt, mGridNx, mGridNy);
+    vg.init(netIndex, lb, lt, bRes.nx, bRes.ny, tRes.nx, tRes.ny);
 
     int idx = static_cast<int>(mViaGrids.size());
     mViaGrids.push_back(std::move(vg));
@@ -1416,20 +1310,18 @@ std::uint64_t CoarsePdnBuilder3D::makeViaKey(int netIndex, int lb, int lt) {
 void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
     graph.mCoordinateUnit = CircuitGraph::UM;
 
-    const int nxGlobal = mGridNx;
-    const int nyGlobal = mGridNy;
-
-    // tileNodeIds[netIndex][layerIndex][iy * nx + ix]
-    std::vector<std::vector<std::vector<IdString>>> tileNodeIds;
+    // tileNodeIds[netIndex][layerIndex] is a 2D id-grid with its own nx/ny
+    std::vector<std::vector<TileNodeIdGrid>> tileNodeIds;
     tileNodeIds.resize(static_cast<std::size_t>(mNumNets));
     for (int n = 0; n < mNumNets; ++n) {
         tileNodeIds[n].resize(static_cast<std::size_t>(mNumLayers));
         for (int l = 0; l < mNumLayers; ++l) {
-            tileNodeIds[n][l].resize(
-              static_cast<std::size_t>(nxGlobal * nyGlobal));
+            const ConductanceGrid2D& grid = mInPlaneGrids[n][l];
+            tileNodeIds[n][l].init(grid.nx, grid.ny);
         }
     }
 
+    // Register PDN nets per layer
     for (int l = 0; l < mNumLayers; ++l) {
         IdString layerName = mLayerOrder[l];
         for (int n = 0; n < mNumNets; ++n) {
@@ -1471,8 +1363,7 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
                     node.mY    = FPN::toRep(yCenterUm);
 
                     graph.mNodes.emplace(nodeId, node);
-                    tileNodeIds[n][l][static_cast<std::size_t>(iy * nx + ix)] =
-                      nodeId;
+                    tileNodeIds[n][l].at(ix, iy) = nodeId;
                 }
             }
 
@@ -1482,12 +1373,9 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
                     double G = grid.gx(ix, iy);
                     if (G <= 0.0) continue;
 
-                    double   R = 1.0 / G;
-                    IdString n1 =
-                      tileNodeIds[n][l]
-                                 [static_cast<std::size_t>(iy * nx + ix)];
-                    IdString n2 = tileNodeIds[n][l][static_cast<std::size_t>(
-                      iy * nx + (ix + 1))];
+                    double   R  = 1.0 / G;
+                    IdString n1 = tileNodeIds[n][l].at(ix, iy);
+                    IdString n2 = tileNodeIds[n][l].at(ix + 1, iy);
 
                     std::ostringstream ossResName;
                     ossResName << ni.name.str() << "_" << layerName.str()
@@ -1510,12 +1398,9 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
                     double G = grid.gy(ix, iy);
                     if (G <= 0.0) continue;
 
-                    double   R = 1.0 / G;
-                    IdString n1 =
-                      tileNodeIds[n][l]
-                                 [static_cast<std::size_t>(iy * nx + ix)];
-                    IdString n2 = tileNodeIds[n][l][static_cast<std::size_t>(
-                      (iy + 1) * nx + ix)];
+                    double   R  = 1.0 / G;
+                    IdString n1 = tileNodeIds[n][l].at(ix, iy);
+                    IdString n2 = tileNodeIds[n][l].at(ix, iy + 1);
 
                     std::ostringstream ossResName;
                     ossResName << ni.name.str() << "_" << layerName.str()
@@ -1541,40 +1426,45 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
         const int netIndex = vg.netIndex;
         const int lb       = vg.bottomLayerIdx;
         const int lt       = vg.topLayerIdx;
-        const int nx       = vg.nx;
-        const int ny       = vg.ny;
 
         const NetInfo& ni     = mNetByIndex[netIndex];
         IdString       blName = mLayerOrder[lb];
         IdString       tlName = mLayerOrder[lt];
 
-        for (int iy = 0; iy < ny; ++iy) {
-            for (int ix = 0; ix < nx; ++ix) {
-                double G = vg.g(ix, iy);
-                if (G <= 0.0) continue;
+        for (const auto& kv : vg.edgeG) {
+            const std::uint64_t edgeKey = kv.first;
+            const double        G       = kv.second;
 
-                double R = 1.0 / G;
+            if (G <= 0.0) continue;
 
-                IdString bottomId =
-                  tileNodeIds[netIndex][lb]
-                             [static_cast<std::size_t>(iy * nx + ix)];
-                IdString topId =
-                  tileNodeIds[netIndex][lt]
-                             [static_cast<std::size_t>(iy * nx + ix)];
+            const double R = 1.0 / G;
 
-                std::ostringstream ossName;
-                ossName << ni.name.str() << "_VIA_" << blName.str() << "_to_"
-                        << tlName.str() << "_T_" << ix << "_" << iy << "_"
-                        << viaCounter++;
-                IdString viaId = IdString(ossName.str());
+            std::uint32_t bFlat = 0, tFlat = 0;
+            ViaGrid3D::unpackEdge(edgeKey, bFlat, tFlat);
 
-                ViaRes vr;
-                vr.mName = viaId;
-                vr.mN1   = bottomId;
-                vr.mN2   = topId;
-                vr.mR    = R;
-                graph.mViaResistors.push_back(std::move(vr));
-            }
+            const int bIx = static_cast<int>(
+              bFlat % static_cast<std::uint32_t>(vg.bottomNx));
+            const int bIy = static_cast<int>(
+              bFlat / static_cast<std::uint32_t>(vg.bottomNx));
+            const int tIx =
+              static_cast<int>(tFlat % static_cast<std::uint32_t>(vg.topNx));
+            const int tIy =
+              static_cast<int>(tFlat / static_cast<std::uint32_t>(vg.topNx));
+
+            IdString bottomId = tileNodeIds[netIndex][lb].at(bIx, bIy);
+            IdString topId    = tileNodeIds[netIndex][lt].at(tIx, tIy);
+
+            std::ostringstream ossName;
+            ossName << ni.name.str() << "_VIA_" << blName.str() << "_to_"
+                    << tlName.str() << "_B_" << bIx << "_" << bIy << "_T_"
+                    << tIx << "_" << tIy << "_" << viaCounter++;
+
+            ViaRes vr;
+            vr.mName = IdString(ossName.str());
+            vr.mN1   = bottomId;
+            vr.mN2   = topId;
+            vr.mR    = R;
+            graph.mViaResistors.push_back(std::move(vr));
         }
     }
 
@@ -1593,16 +1483,19 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
     //     const int ny = attachGrid.ny;
 
     //     int ix =
-    //       clamp(static_cast<int>((b.x_um - attachGrid.xMin) / attachGrid.dx),
+    //       clamp(static_cast<int>((b.x_um - attachGrid.xMin) /
+    //       attachGrid.dx),
     //             0,
     //             nx - 1);
     //     int iy =
-    //       clamp(static_cast<int>((b.y_um - attachGrid.yMin) / attachGrid.dy),
+    //       clamp(static_cast<int>((b.y_um - attachGrid.yMin) /
+    //       attachGrid.dy),
     //             0,
     //             ny - 1);
 
     //     IdString tileId = tileNodeIds[netIndex][mBumpLayerIndex]
-    //                                  [static_cast<std::size_t>(iy * nx + ix)];
+    //                                  [static_cast<std::size_t>(iy * nx +
+    //                                  ix)];
 
     //     // Bump node
     //     std::ostringstream ossBumpName;

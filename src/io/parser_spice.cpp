@@ -232,7 +232,7 @@ void parseCommentMeta(
         meta.mNet     = IdString(netNameStr);               // textual net name
         meta.mFromNet = IdString(std::to_string(netIndex)); // store index here
         meta.mToNet   = IdString("");                       // unused for layer
-        meta.mRaw     = IdString(content);
+        meta.mRaw     = content;
         bool  isPwr = (netNameStr == "VDD"); // Hard coded for IBMPG benchmark
         bool  isGnd = (netNameStr == "GND"); // Hard coded for IBMPG benchmark
         NetId netId = circ.registerNet(
@@ -279,7 +279,7 @@ void parseCommentMeta(
         meta.mNet     = IdString(""); // unused
         meta.mFromNet = IdString(std::to_string(fromNet));
         meta.mToNet   = IdString(std::to_string(toNet));
-        meta.mRaw     = IdString(content);
+        meta.mRaw     = content;
         circ.mSections.push_back(std::move(meta));
         return;
     }

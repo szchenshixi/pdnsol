@@ -3,7 +3,6 @@
 
 #include <algorithm>
 #include <cctype>
-#include <stdexcept>
 
 namespace pdnsol {
 

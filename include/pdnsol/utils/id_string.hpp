@@ -7,6 +7,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class IdString {
@@ -29,10 +30,10 @@ class IdString {
         return IdString(sv, NoIntern);
     }
 
-    bool valid() const { return mId != kInvalid; }
-    uint32_t id() const { return mId; }
+    bool               valid() const { return mId != kInvalid; }
+    uint32_t           id() const { return mId; }
     const std::string& str() const { return resolveGlobal(mId); }
-    const char* c_str() const { return resolveGlobal(mId).c_str(); }
+    const char*        c_str() const { return resolveGlobal(mId).c_str(); }
 
     // Explicit conversion to bool
     explicit operator bool() const { return valid(); }
@@ -67,12 +68,17 @@ class IdString {
         }
     };
 
+    template <typename DataType>
+    using Map = std::unordered_map<IdString, DataType, IdString::Hash>;
+    template <typename DataType>
+    using Set = std::unordered_set<IdString, IdString::Hash>;
+
   private:
     static constexpr uint32_t kInvalid = 0xFFFFFFFFu;
-    uint32_t mId;
+    uint32_t                  mId;
 
-    static uint32_t internGlobal(std::string_view sv);
-    static uint32_t lookupGlobal(std::string_view sv);
+    static uint32_t           internGlobal(std::string_view sv);
+    static uint32_t           lookupGlobal(std::string_view sv);
     static const std::string& resolveGlobal(uint32_t id);
     static const std::string& getInvalidStr() {
         static const std::string kInvalidStr = "<Invalid>";
@@ -106,19 +112,19 @@ class IdString {
                 return lhs == rhs;
             }
             bool operator()(const std::string& lhs,
-                            std::string_view rhs) const noexcept {
+                            std::string_view   rhs) const noexcept {
                 return std::string_view{lhs} == rhs;
             }
-            bool operator()(std::string_view lhs,
+            bool operator()(std::string_view   lhs,
                             const std::string& rhs) const noexcept {
                 return lhs == std::string_view{rhs};
             }
-            bool operator()(const char* lhs,
+            bool operator()(const char*      lhs,
                             std::string_view rhs) const noexcept {
                 return std::string_view{lhs} == rhs;
             }
             bool operator()(std::string_view lhs,
-                            const char* rhs) const noexcept {
+                            const char*      rhs) const noexcept {
                 return lhs == std::string_view{rhs};
             }
         };
@@ -126,7 +132,7 @@ class IdString {
         std::vector<std::string> mPool;
         std::unordered_map<std::string, uint32_t, TransparentHash,
                            TransparentEqual>
-          mMap;
+                   mMap;
         std::mutex mMu;
     };
 

@@ -38,7 +38,7 @@ struct CoarseModelConfig {
     //   - top-most metals (e.g., M9 VDD, M9 VSS) as Accurate
     //   - bottom rails (e.g., M1 straps) as Accurate
     //   - all middle/global distribution metals as Approximate
-    std::unordered_map<IdString, LayerMode, IdString::Hash> perLayerMode;
+    IdString::Map<LayerMode> perLayerMode;
 };
 
 // -----------------------------------------------------------------------------
@@ -110,10 +110,10 @@ class CircuitCoarsener {
 
     // Derived configuration:
     // (MetalRes::mName) -> LayerMode
-    std::unordered_map<IdString, LayerMode, IdString::Hash> mLayerMode;
+    IdString::Map<LayerMode> mLayerMode;
 
     // Node classification: (Node::mName) -> NodeMode
-    std::unordered_map<IdString, detail::NodeMode, IdString::Hash> mNodeMode;
+    IdString::Map<detail::NodeMode> mNodeMode;
 
     // Geometry and tiling
     Tick mMinX          = 0;
@@ -122,7 +122,7 @@ class CircuitCoarsener {
 
     // Node mapping:
     //   original node id -> output node id
-    std::unordered_map<IdString, IdString, IdString::Hash> mNodeMap;
+    IdString::Map<IdString> mNodeMap;
 
     // Tile -> coarse node id (for approximate layers)
     std::unordered_map<detail::TileKey, IdString, detail::TileKeyHash>
@@ -150,10 +150,10 @@ class CircuitCoarsener {
     // Node mapping
     // ----------------------------
 
-    NodeMap& outNodes();
-    IdString mapNode(IdString inId);
-    IdString createAccurateNode(IdString inId);
-    IdString createCoarseNode(IdString inId);
+    IdString::Map<Node>& outNodes();
+    IdString             mapNode(IdString inId);
+    IdString             createAccurateNode(IdString inId);
+    IdString             createCoarseNode(IdString inId);
 
     // ----------------------------
     // Build resistive network

@@ -3,12 +3,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
-#include <string_view>
 #include <unordered_map>
 #include <vector>
 
+#include "pdnsol/common.hpp"
+#include "pdnsol/io/tech_db.hpp"
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/id_string.hpp"
+#include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
 
@@ -36,106 +38,8 @@ struct SpecialNetRouteState {
     bool inRoute        = false; // inside a ROUTED/NEW/FIXED/COVER statement
     bool prevPointValid = false; // we have a previous (x,y) to connect from
     int  widthDbu       = 0;     // current routing width in DBU, if specified
-    std::string shape;           // e.g. "STRIPE", "FOLLOWPIN"
-    int         prevX = 0;       // previous routed point (DBU)
-    int         prevY = 0;
-};
-
-// -----------------------------------------------------------------------------
-// Technology database for metal layers, vias, and TSVs
-// -----------------------------------------------------------------------------
-
-struct TechLayer {
-    IdString name;
-    double   resistivity; // Ω·µm (Ohm * micron)
-    double   thickness;   // µm
-};
-
-struct TechVia {
-    IdString name;
-    IdString bottomLayer;
-    IdString topLayer;
-    double   resistance; // Ohms per via instance (or per cut)
-};
-
-struct TechTsv {
-    IdString name;
-    IdString bottomLayer;
-    IdString topLayer;
-    double   resistance; // Ohms per TSV
-};
-
-struct TechViaGeom {
-    IdString name;
-    IdString viaRuleName;
-
-    IdString bottomLayer;
-    IdString cutLayer;
-    IdString topLayer;
-
-    // All geometry values are in DEF DBU units
-    int cutSizeX         = 0;
-    int cutSizeY         = 0;
-    int cutSpacingX      = 0;
-    int cutSpacingY      = 0;
-    int enclosureBottomX = 0; // overhang on bottom layer, x-direction
-    int enclosureBottomY = 0; // overhang on bottom layer, y-direction
-    int enclosureTopX    = 0; // overhang on top layer, x-direction
-    int enclosureTopY    = 0; // overhang on top layer, y-direction
-    int rows             = 1; // ROWCOL
-    int cols             = 1; // ROWCOL
-};
-
-// TSV geometry extension point (minimal, but allows you to fill later)
-// struct TechTsvGeom {
-//     IdString name;
-//     double   diameter_um = 0.0;
-//     double   height_um   = 0.0;
-// };
-
-class TechDatabase {
-  public:
-    // Metal layers
-    void addLayer(std::string_view name, double resistivity_ohm_um,
-                  double thickness_um);
-
-    const TechLayer* getLayer(IdString name) const;
-
-    // Vias
-    void addVia(std::string_view viaName, std::string_view bottomLayer,
-                std::string_view topLayer, double resistance_ohm);
-
-    const TechVia* getVia(IdString viaName) const;
-
-    // TSVs
-    void addTsv(std::string_view tsvName, std::string_view bottomLayer,
-                std::string_view topLayer, double resistance_ohm);
-
-    const TechTsv* getTsv(IdString tsvName) const;
-
-    // Via geometry from DEF "VIAS" section
-    void addViaGeometryFromDef(
-      std::string_view viaName, std::string_view viaRuleName,
-      std::string_view bottomLayer, std::string_view cutLayer,
-      std::string_view topLayer, int cutSizeX, int cutSizeY, int cutSpacingX,
-      int cutSpacingY, int enclosureBottomX, int enclosureBottomY,
-      int enclosureTopX, int enclosureTopY, int rows, int cols);
-
-    const TechViaGeom* getViaGeometry(IdString viaName) const;
-
-    // void addTsvGeometry(std::string_view tsvName, double diameter_um,
-    //                     double height_um);
-
-    // const TechTsvGeom* getTsvGeometry(IdString tsvName) const;
-
-  private:
-    std::unordered_map<IdString, TechLayer, IdString::Hash> mLayers;
-    std::unordered_map<IdString, TechVia, IdString::Hash>   mVias;
-    std::unordered_map<IdString, TechTsv, IdString::Hash>   mTsvs;
-
-    std::unordered_map<IdString, TechViaGeom, IdString::Hash> mViaGeometries;
-    // std::unordered_map<IdString, TechTsvGeom, IdString::Hash>
-    // mTsvGeometries;
+    int  prevX          = 0;     // previous routed point (DBU)
+    int  prevY          = 0;
 };
 
 // -----------------------------------------------------------------------------
@@ -171,19 +75,40 @@ struct ConductanceGrid2D {
 // -----------------------------------------------------------------------------
 
 struct ViaGrid3D {
-    int                 netIndex       = -1;
-    int                 bottomLayerIdx = -1;
-    int                 topLayerIdx    = -1;
-    int                 nx             = 0;
-    int                 ny             = 0;
-    // G[ix,iy]: total conductance between (bottomLayerIdx, ix,iy)
-    // and (topLayerIdx, ix,iy) for this net
-    std::vector<double> G; // size = nx*ny
+    int netIndex       = -1;
+    int bottomLayerIdx = -1;
+    int topLayerIdx    = -1;
 
-    void init(int netIdx, int lb, int lt, int nx_, int ny_);
+    // Dimensions of the bottom/top layer grids for this via connection.
+    int bottomNx = 0;
+    int bottomNy = 0;
+    int topNx    = 0;
+    int topNy    = 0;
 
-    inline double&       g(int ix, int iy);
-    inline const double& g(int ix, int iy) const;
+    // key = (bottomFlat << 32) | topFlat
+    // value = total conductance (Siemens) between those two tiles, before
+    // scaling.
+    std::unordered_map<std::uint64_t, double> edgeG;
+
+    void init(int netIdx, int lb, int lt, int bNx, int bNy, int tNx, int tNy);
+
+    static std::uint64_t packEdge(std::uint32_t bFlat, std::uint32_t tFlat) {
+        return (static_cast<std::uint64_t>(bFlat) << 32) |
+               static_cast<std::uint64_t>(tFlat);
+    }
+
+    static void unpackEdge(std::uint64_t key, std::uint32_t& bFlat,
+                           std::uint32_t& tFlat) {
+        bFlat = static_cast<std::uint32_t>(key >> 32);
+        tFlat = static_cast<std::uint32_t>(key & 0xFFFFFFFFu);
+    }
+
+    void addConductance(int bIx, int bIy, int tIx, int tIy, double dG);
+
+    // G[bIx, bIy, tIx, tIy] for this net:
+    // Total conductance between (bottomLayerIdx,ix,iy) and (topLayerIdx,ix,iy)
+    const double& g(int bIx, int bIy, int tIx, int tIy) const;
+    double&       g(int bIx, int bIy, int tIx, int tIy);
 };
 
 // -----------------------------------------------------------------------------
@@ -207,13 +132,19 @@ struct Bump {
 // CoarsePdnBuilder3D
 // -----------------------------------------------------------------------------
 
+struct LayerGridResolution {
+    int nx = 0;
+    int ny = 0;
+};
+
 class CoarsePdnBuilder3D {
   public:
-    CoarsePdnBuilder3D(TechDatabase& techDb, int gridNx, int gridNy,
-                       const std::vector<std::string>& powerNetNames,
+    CoarsePdnBuilder3D(TechDatabase& techDb, int defaultGridNx,
+                       int                                       defaultGridNy,
+                       const IdString::Map<LayerGridResolution>& perLayerRes,
+                       const std::vector<std::string>&           powerNetNames,
                        const std::vector<std::string>& groundNetNames,
-                       const std::vector<std::string>& layerOrder,
-                       const std::string&              bumpLayerName = "");
+                       const std::vector<std::string>& layerOrder);
 
     // Encode (netIndex, layerIndex) into Node.mNet and MetalRes.mNet
     int encodeNetLayer(int netIndex, int layerIndex) const;
@@ -221,11 +152,6 @@ class CoarsePdnBuilder3D {
     // Main entry point
     bool buildCoarsePdnFromDef(const std::string& defPath,
                                CircuitGraph&      outGraph);
-
-    //   You can call this from external TSV parsing code (not from DEF).
-    //   It will reuse the same vertical conductance accumulation as vias.
-    void addTsvInstance(const std::string& netName, const std::string& tsvName,
-                        double x_um, double y_um);
 
   private:
     // -----------------------------------------------------------------
@@ -252,9 +178,9 @@ class CoarsePdnBuilder3D {
                               std::size_t startIdx, int prevX, int prevY,
                               int& x, int& y, std::size_t& consumed);
 
-    // Convert a routed segment into a rectangle and feed it into the
-    // existing rectangle-based PDN builder.
-    // widthDbu is the wire width from "ROUTED/NEW" (in DBU).
+    // Convert a routed segment into a rectangle and feed it into the existing
+    // rectangle-based PDN builder. widthDbu is the wire width from
+    // "ROUTED/NEW" (in DBU).
     void addStripeFromSegment(const std::string& netName,
                               const std::string& layerName, int x0, int y0,
                               int x1, int y1, int widthDbu);
@@ -262,7 +188,7 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // DEF parsing: PDN stripes, vias, and bumps
     // -----------------------------------------------------------------
-    enum class Section { NONE, SPECIALNETS, PINS, VIAS, COMPONENTS };
+    enum class Section { NONE, SPECIALNETS, VIAS, COMPONENTS };
 
     bool parseDefPdnAndBumps(const std::string& defPath);
 
@@ -338,19 +264,21 @@ class CoarsePdnBuilder3D {
   private:
     // Inputs
     TechDatabase& mTechDb;
-    int           mGridNx      = 0;
-    int           mGridNy      = 0;
-    double        mDefaultPkgR = 0.0;
+    int           mDefaultGridNx = 0;
+    int           mDefaultGridNy = 0;
+    double        mDefaultPkgR   = 0.0;
 
     // PDN nets
-    std::unordered_map<IdString, NetInfo, IdString::Hash> mNetByName;
-    std::vector<NetInfo>                                  mNetByIndex;
-    int                                                   mNumNets = 0;
+    IdString::Map<NetInfo> mNetByName;
+    std::vector<NetInfo>   mNetByIndex;
+    int                    mNumNets = 0;
 
     // PDN layers
-    std::vector<IdString>                             mLayerOrder;
-    std::unordered_map<IdString, int, IdString::Hash> mLayerNameToIndex;
-    int                                               mNumLayers = 0;
+    std::vector<IdString>            mLayerOrder;
+    // (layer index -> grid resolution)
+    std::vector<LayerGridResolution> mLayerGridRes;
+    IdString::Map<int>               mLayerNameToIndex;
+    int                              mNumLayers = 0;
 
     int mNumNetLayerComb = 0;
 
@@ -367,48 +295,6 @@ class CoarsePdnBuilder3D {
     // Vertical via/TSV grids
     std::vector<ViaGrid3D>                 mViaGrids;
     std::unordered_map<std::uint64_t, int> mViaGridLookup;
-
-    // Bumps from PINS section
-    // std::vector<Bump> mBumps;
-
-    // State for parsing multi-line PINS entries.
-    // struct PinParseState {
-    //     IdString pinName;
-    //     IdString netName;
-    //     bool     isPowerOrGround = false;
-    //     bool     hasLocation     = false;
-    //     int      xDbu            = 0;
-    //     int      yDbu            = 0;
-    //     bool     inPin           = false;
-
-    //     void reset() {
-    //         pinName         = IdString();
-    //         netName         = IdString();
-    //         isPowerOrGround = false;
-    //         hasLocation     = false;
-    //         xDbu            = 0;
-    //         yDbu            = 0;
-    //         inPin           = false;
-    //     }
-    // };
-
-    // PINS parsing state (multi-line support)
-    // PinParseState mPinParseState;
-
-    // struct ComponentParseState {
-    //     std::string instName;  // instance name, e.g. "U_TSV_PG_0"
-    //     std::string macroName; // master name, e.g. "TSV_PG_Power1"
-    //     bool isTsv = false;    // whether this component is a TSV we care
-    //     about
-
-    //     void reset() {
-    //         instName.clear();
-    //         macroName.clear();
-    //         isTsv = false;
-    //     }
-    // };
-
-    // ComponentParseState mComponentParseState;
 };
 
 // Inline accessors for small structs
@@ -428,12 +314,54 @@ inline const double& ConductanceGrid2D::gy(int ix, int iy) const {
     return Gy[static_cast<std::size_t>(ix + nx * iy)];
 }
 
-inline double& ViaGrid3D::g(int ix, int iy) {
-    return G[static_cast<std::size_t>(iy * nx + ix)];
+inline double& ViaGrid3D::g(int bIx, int bIy, int tIx, int tIy) {
+    PDN_FATAL_IF(bIx < 0 || bIx >= bottomNx,
+                 "Bottom-X index %d beyond scope (0, %d)",
+                 bIx,
+                 bottomNx);
+    PDN_FATAL_IF(bIy < 0 || bIy >= bottomNy,
+                 "Bottom-Y index %d beyond scope (0, %d)",
+                 bIy,
+                 bottomNy);
+    PDN_FATAL_IF(tIx < 0 || tIx >= topNx,
+                 "Top-X index %d beyond scope (0, %d)",
+                 tIx,
+                 topNx);
+    PDN_FATAL_IF(tIy < 0 || tIy >= topNy,
+                 "Top-Y index %d beyond scope (0, %d)",
+                 tIy,
+                 topNy);
+
+    const std::uint32_t bFlat =
+      static_cast<std::uint32_t>(bIy * bottomNx + bIx);
+    const std::uint32_t tFlat = static_cast<std::uint32_t>(tIy * topNx + tIx);
+
+    return edgeG.at(packEdge(bFlat, tFlat));
 }
 
-inline const double& ViaGrid3D::g(int ix, int iy) const {
-    return G[static_cast<std::size_t>(iy * nx + ix)];
+inline const double& ViaGrid3D::g(int bIx, int bIy, int tIx, int tIy) const {
+    PDN_FATAL_IF(bIx < 0 || bIx >= bottomNx,
+                 "Bottom-X index %d beyond scope (0, %d)",
+                 bIx,
+                 bottomNx);
+    PDN_FATAL_IF(bIy < 0 || bIy >= bottomNy,
+                 "Bottom-Y index %d beyond scope (0, %d)",
+                 bIy,
+                 bottomNy);
+    PDN_FATAL_IF(tIx < 0 || tIx >= topNx,
+                 "Top-X index %d beyond scope (0, %d)",
+                 tIx,
+                 topNx);
+    PDN_FATAL_IF(tIy < 0 || tIy >= topNy,
+                 "Top-Y index %d beyond scope (0, %d)",
+                 tIy,
+                 topNy);
+
+    const std::uint32_t bFlat =
+      static_cast<std::uint32_t>(bIy * bottomNx + bIx);
+    const std::uint32_t tFlat = static_cast<std::uint32_t>(tIy * topNx + tIx);
+
+    return edgeG.at(packEdge(bFlat, tFlat));
 }
 
 } // namespace pdnsol

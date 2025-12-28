@@ -5,6 +5,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/id_string.hpp"
 
@@ -12,12 +14,12 @@ namespace pdnsol {
 class CircuitConnectivityChecker {
   private:
     struct GraphNode {
-        std::unordered_set<IdString, IdString::Hash> neighbors;
-        bool                                         visited = false;
-        IdString                                     id;
+        IdString::Set<IdString> neighbors;
+        bool                    visited = false;
+        IdString                id;
     };
 
-    std::unordered_map<IdString, GraphNode, IdString::Hash> nodeGraph;
+    IdString::Map<GraphNode> nodeGraph;
 
     void                               buildGraph(const CircuitGraph& circuit);
     std::vector<std::vector<IdString>> findConnectedComponents();

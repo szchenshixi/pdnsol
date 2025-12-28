@@ -6,10 +6,10 @@
 
 namespace pdnsol {
 bool integrityCheck(const Json& configJ, const std::string& filePath) {
+    bool result = true;
 #ifndef NDEBUG
     // Alias for filesystem if you want
     namespace fs = std::filesystem;
-    bool result  = true;
 
     // -------------------------------------------------------------------------
     // Helper lambdas
@@ -428,10 +428,10 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
         // OK.
 
         // grid_Nx >= 0.0, warn if 0
-        requireNonNegativeNumber(*simJ, "grid_Nx", "simulation.grid_Nx");
+        // requireNonNegativeNumber(*simJ, "grid_Nx", "simulation.grid_Nx");
 
         // grid_Ny >= 0.0, warn if 0
-        requireNonNegativeNumber(*simJ, "grid_Ny", "simulation.grid_Ny");
+        // requireNonNegativeNumber(*simJ, "grid_Ny", "simulation.grid_Ny");
 
         // Enforce it to by within the defined metal layers
         const char* key = "bump_layer";
@@ -471,8 +471,7 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
             }
         }
     }
-
-    return result;
 #endif // NDEBUG
+    return result;
 }
 } // namespace pdnsol

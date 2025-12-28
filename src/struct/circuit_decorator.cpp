@@ -93,12 +93,12 @@ void CircuitDecorator::addVoltageSourceFromConfig(
     };
 
     // Keyed by *PDN node name* (IdString).
-    std::unordered_map<IdString, NodeVsrcInfo, IdString::Hash> nodeInfoMap;
+    IdString::Map<NodeVsrcInfo> nodeInfoMap;
 
     // Helper: iterate over graph.mNodes
-    // NOTE: This assumes NodeMap is something like:
-    //   using NodeMap = std::unordered_map<IdString, Node, IdString::Hash>;
-    // If your NodeMap is different, adjust the "for" loop accordingly.
+    // NOTE: This assumes IdString::Map<Node> is something like:
+    //   using IdString::Map<Node> = std::unordered_map<IdString, Node, IdString::Hash>;
+    // If your IdString::Map<Node> is different, adjust the "for" loop accordingly.
     auto findClosestNodeOnLayerAndNet =
       [&graph, &landingLayerId](const IdString& netNameId,
                                 Tick            xTick,
@@ -125,7 +125,7 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             if (nk.layer != landingLayerId) continue;
 
             // Filter by net name.
-            if (nk.name != netNameId) continue;
+            if (nk.netName != netNameId) continue;
 
             // Compute squared distance in [um^2].
             const Tick        dx = node.mX - xTick;

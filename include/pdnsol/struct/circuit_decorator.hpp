@@ -34,7 +34,7 @@ class CircuitDecorator {
     struct CurrentRegion {
         RectRegion rect;
         IdString   layer;
-        DoubleMap  netCurrents; // net name -> total current in Amp
+        IdString::Map<ScalarType>  netCurrents; // net name -> total current in Amp
     };
 
     struct VoltageRegion {

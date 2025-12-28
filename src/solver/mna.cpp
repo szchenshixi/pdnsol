@@ -13,13 +13,13 @@ Indices buildIndices(const CircuitGraph& circ) {
         if (kv.first != "GND") nodeNames.push_back(kv.first);
     }
     std::sort(nodeNames.begin(), nodeNames.end());
-    IntMap nodeIndex;
+    IdString::Map<IndexType> nodeIndex;
     nodeIndex.reserve(nodeNames.size());
     for (IndexType i = 0; i < static_cast<IndexType>(nodeNames.size()); ++i) {
         nodeIndex.emplace(nodeNames[i], i);
     }
 
-    IntMap vsrcIndex;
+    IdString::Map<IndexType> vsrcIndex;
     vsrcIndex.reserve(circ.mVsrcs.size());
     for (IndexType k = 0; k < static_cast<IndexType>(circ.mVsrcs.size()); ++k) {
         vsrcIndex.emplace(circ.mVsrcs[k].mName, k);

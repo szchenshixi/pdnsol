@@ -35,21 +35,21 @@ inline const NetId NetId::Invalid{-1};
 // -------------------------------
 struct NetKey {
     IdString layer;
-    IdString name;
+    IdString netName;
     bool     isPower;
     bool     isGround;
 
     struct Hash {
         std::size_t operator()(const NetKey& v) const {
             std::size_t h1 = IdString::Hash{}(v.layer);
-            std::size_t h2 = IdString::Hash{}(v.name);
+            std::size_t h2 = IdString::Hash{}(v.netName);
             // Boost-style combine
             return h1 ^ (h2 + 0x9e3779b97f4a7c15ULL + (h1 << 6) + (h1 >> 2));
         }
     };
 
     bool operator==(const NetKey& other) const noexcept {
-        return layer == other.layer && name == other.name;
+        return layer == other.layer && netName == other.netName;
     }
 };
 
@@ -103,25 +103,25 @@ struct Isrc {
 };
 
 struct SectionMeta {
-    IdString                mType; // "layer" or "vias"
-    IdString                mName;
-    IdString                mNet;
-    IdString                mFromNet;
-    IdString                mToNet;
-    std::optional<IdString> mRaw;
+    IdString    mType; // "layer" or "vias"
+    IdString    mName;
+    IdString    mNet;
+    IdString    mFromNet;
+    IdString    mToNet;
+    std::string mRaw;
 };
 
 struct CircuitGraph {
     enum Unit { UM, MM }; // Input unit
     Unit                     mCoordinateUnit = UM;
-    NodeMap                  mNodes;
+    IdString::Map<Node>      mNodes;
     std::vector<MetalRes>    mMetalResistors;
     std::vector<ViaRes>      mViaResistors;
     std::vector<PkgRes>      mPkgResistors;
     std::vector<Vsrc>        mVsrcs;
     std::vector<Isrc>        mIsrcs;
     std::vector<SectionMeta> mSections;
-    IdStringMap              mMetadata;
+    IdString::Map<IdString>  mMetadata;
 
     std::unordered_map<NetKey, NetId, NetKey::Hash> mNet2Id; // Net to its id
     std::vector<NetKey>                             mId2Net;

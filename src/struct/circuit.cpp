@@ -1,10 +1,10 @@
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/fixed_point_number.hpp"
+#include "pdnsol/utils/id_string.hpp"
 #include "pdnsol/utils/logging.hpp"
 
 #include <cmath>
 #include <stdexcept>
-#include <unordered_set>
 
 namespace pdnsol {
 namespace {
@@ -283,10 +283,9 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
 }
 
 void CircuitGraph::ensureAllReferencedNodesExist() {
-    std::unordered_set<IdString, IdString::Hash> names;
+    IdString::Set<IdString> names;
     // from already-known nodes
-    for (const auto& kv : mNodes)
-        names.insert(kv.first);
+    for (const auto& kv : mNodes) names.insert(kv.first);
     // from devices
     auto addName = [&](const IdString& nodeName) {
         if (nodeName.valid() && names.find(nodeName) == names.end()) {
@@ -353,12 +352,9 @@ void CircuitGraph::validateReadyForMna() const {
         }
     };
 
-    for (const auto& res : mMetalResistors)
-        checkR(res.mName, res.mR);
-    for (const auto& res : mViaResistors)
-        checkR(res.mName, res.mR);
-    for (const auto& res : mPkgResistors)
-        checkR(res.mName, res.mR);
+    for (const auto& res : mMetalResistors) checkR(res.mName, res.mR);
+    for (const auto& res : mViaResistors) checkR(res.mName, res.mR);
+    for (const auto& res : mPkgResistors) checkR(res.mName, res.mR);
 }
 
 void CircuitGraph::purgeParallelElements() {

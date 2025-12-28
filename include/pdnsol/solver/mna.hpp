@@ -15,16 +15,16 @@ namespace pdnsol {
 struct MNASystem {
     Eigen::SparseMatrix<double, Eigen::ColMajor, int> mA;
     Eigen::VectorXd mB;
-    IntMap mNodeIndex;
-    IntMap mVsrcIndex;
+    IdString::Map<IndexType> mNodeIndex;
+    IdString::Map<IndexType> mVsrcIndex;
 };
 
 struct MNASolution {
-    DoubleMap mVoltages;
-    DoubleMap mVsrcCurrents;
+    IdString::Map<ScalarType> mVoltages;
+    IdString::Map<ScalarType> mVsrcCurrents;
     Eigen::VectorXd mXFull;
-    IntMap mNodeIndex;
-    IntMap mVsrcIndex;
+    IdString::Map<IndexType> mNodeIndex;
+    IdString::Map<IndexType> mVsrcIndex;
 };
 
 // -------------------------------
@@ -32,8 +32,8 @@ struct MNASolution {
 // -------------------------------
 
 struct Indices {
-    IntMap mNodeIndex;
-    IntMap mVsrcIndex;
+    IdString::Map<IndexType> mNodeIndex;
+    IdString::Map<IndexType> mVsrcIndex;
 };
 
 Indices buildIndices(const CircuitGraph& circ);

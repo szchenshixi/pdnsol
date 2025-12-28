@@ -21,13 +21,13 @@ MNASolution solveMNA(const MNASystem& sys) {
 
     const int N = static_cast<int>(sys.mNodeIndex.size());
 
-    DoubleMap nodeVoltages;
+    IdString::Map<ScalarType> nodeVoltages;
     nodeVoltages.reserve(sys.mNodeIndex.size());
     for (const auto& kv : sys.mNodeIndex) {
         nodeVoltages.emplace(kv.first, x(kv.second));
     }
 
-    DoubleMap vsrcCurrents;
+    IdString::Map<ScalarType> vsrcCurrents;
     vsrcCurrents.reserve(sys.mVsrcIndex.size());
     for (const auto& kv : sys.mVsrcIndex) {
         vsrcCurrents.emplace(kv.first, x(N + kv.second));
