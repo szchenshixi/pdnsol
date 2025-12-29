@@ -369,4 +369,75 @@ void CircuitGraph::purgeParallelElements() {
     // 3. Voltage sources
     dedupVsrcs(mVsrcs);
 }
+
+// Purge nodes that have no incident elements (degree == 0).
+// Returns the number of nodes removed.
+std::size_t CircuitGraph::purgeIsolatedNodes() {
+    if (mNodes.empty()) {
+        return 0;
+    }
+
+    using DegreeT = std::uint32_t;
+
+    // Degree map for existing nodes only.
+    std::unordered_map<IdString, DegreeT, IdString::Hash> degree;
+    degree.reserve(mNodes.size());
+
+    // Assumption: NodeMap is keyed by node name (IdString), matching element
+    // endpoints.
+    for (const auto& kv : mNodes) {
+        degree.emplace(kv.first, DegreeT{0});
+    }
+
+    auto bumpIfPresent = [&](const IdString& nodeName) {
+        auto it = degree.find(nodeName);
+        if (it != degree.end()) {
+            ++it->second;
+        }
+        // If an element references a node that is not in mNodes, we ignore it
+        // here. (This function is only about removing existing degree-0
+        // nodes.)
+    };
+
+    // Count incident edges for each node.
+    for (const auto& e : mMetalResistors) {
+        bumpIfPresent(e.mN1);
+        bumpIfPresent(e.mN2);
+    }
+    for (const auto& e : mViaResistors) {
+        bumpIfPresent(e.mN1);
+        bumpIfPresent(e.mN2);
+    }
+    for (const auto& e : mPkgResistors) {
+        bumpIfPresent(e.mN1);
+        bumpIfPresent(e.mN2);
+    }
+    for (const auto& e : mVsrcs) {
+        bumpIfPresent(e.mFromNode);
+        bumpIfPresent(e.mToNode);
+    }
+    for (const auto& e : mIsrcs) {
+        bumpIfPresent(e.mFromNode);
+        bumpIfPresent(e.mToNode);
+    }
+
+    // Remove nodes with degree 0.
+    std::size_t removed = 0;
+    for (auto it = mNodes.begin(); it != mNodes.end();) {
+        const IdString& nodeName = it->first;
+
+        auto          dit = degree.find(nodeName);
+        const DegreeT deg = (dit == degree.end()) ? DegreeT{0} : dit->second;
+
+        if (deg == 0) {
+            auto toErase = it++;
+            mNodes.erase(toErase);
+            ++removed;
+        } else {
+            ++it;
+        }
+    }
+
+    return removed;
+}
 } // namespace pdnsol

@@ -143,5 +143,9 @@ struct CircuitGraph {
     void validateReadyForMna() const;
 
     void purgeParallelElements();
+
+    // Purge nodes that have no incident elements (degree == 0).
+    // Returns the number of nodes removed.
+    std::size_t purgeIsolatedNodes();
 };
 } // namespace pdnsol

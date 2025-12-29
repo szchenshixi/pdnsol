@@ -143,6 +143,8 @@ int main(int argc, char** argv) {
         std::cerr << "Failed to build 3D coarse PDN graph.\n";
         return 1;
     }
+    circ.purgeParallelElements();
+    circ.purgeIsolatedNodes();
 
     DecoratorConfig decoratorConfig;
     decoratorConfig.currentConfigPath         = currentSrcPath;
@@ -182,6 +184,8 @@ int main(int argc, char** argv) {
     // Option 3: Generate full report
     std::string report = checker.generateReport(circ);
     std::cout << report;
+
+    exportCircuitGraphForVizJson(circ, "viz_output/viz.json");
 
     return 0;
 }

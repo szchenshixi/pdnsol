@@ -339,7 +339,13 @@ CircuitConnectivityChecker::generateReport(const CircuitGraph& circuit) {
             report << "  Resistors: " << comp.resistors.size() << "\n";
             report << "  Vias: " << comp.vias.size() << "\n";
             report << "  Package Resistors: " << comp.pkgs.size() << "\n";
-            report << "  Current Sources: " << comp.isrcs.size() << "\n\n";
+            report << "  Current Sources: " << comp.isrcs.size() << "\n";
+
+            report << "  Node names (0-9): \n";
+            for (size_t i = 0; i < comp.nodes.size() && i < 10; ++i) {
+                report << "    " << comp.nodes[i].c_str() << "\n";
+            }
+            report << "\n";
         }
     }
 
