@@ -80,39 +80,37 @@ struct ViaGrid3D {
     int topLayerIdx    = -1;
 
     // Dimensions of the bottom/top layer grids for this via connection.
-    int bottomNx = 0;
-    int bottomNy = 0;
-    int topNx    = 0;
-    int topNy    = 0;
+    int nxB = 0, nyB = 0; // bottom layer grid dims
+    int nxT = 0, nyT = 0; // top layer grid dims
 
     // key = (bottomFlat << 32) | topFlat
     // value = total conductance (Siemens) between those two tiles, before
     // scaling.
     std::unordered_map<std::uint64_t, double> edgeG;
 
-    void init(int netIdx, int lb, int lt, int bNx, int bNy, int tNx, int tNy);
+    void init(int netIdx, int lb, int lt, int nxB, int nyB, int nxT, int nyT);
 
-    static std::uint64_t packEdge(std::uint32_t bFlat, std::uint32_t tFlat) {
-        return (static_cast<std::uint64_t>(bFlat) << 32) |
-               static_cast<std::uint64_t>(tFlat);
+    static std::uint64_t packEdge(std::uint32_t flatB, std::uint32_t flatT) {
+        return (static_cast<std::uint64_t>(flatB) << 32) |
+               static_cast<std::uint64_t>(flatT);
     }
 
-    static void unpackEdge(std::uint64_t key, std::uint32_t& bFlat,
-                           std::uint32_t& tFlat) {
-        bFlat = static_cast<std::uint32_t>(key >> 32);
-        tFlat = static_cast<std::uint32_t>(key & 0xFFFFFFFFu);
+    static void unpackEdge(std::uint64_t key, std::uint32_t& flatB,
+                           std::uint32_t& flatT) {
+        flatB = static_cast<std::uint32_t>(key >> 32);
+        flatT = static_cast<std::uint32_t>(key & 0xFFFFFFFFu);
     }
 
-    void addConductance(int bIx, int bIy, int tIx, int tIy, double dG);
+    void addConductance(int ixB, int iyB, int ixT, int iyT, double dG);
 
-    // G[bIx, bIy, tIx, tIy] for this net:
+    // G[ixB, iyB, ixT, iyT] for this net:
     // Total conductance between (bottomLayerIdx,ix,iy) and (topLayerIdx,ix,iy)
-    const double& g(int bIx, int bIy, int tIx, int tIy) const;
-    double&       g(int bIx, int bIy, int tIx, int tIy);
+    const double& g(int ixB, int iyB, int ixT, int iyT) const;
+    double&       g(int ixB, int iyB, int ixT, int iyT);
 };
 
 // -----------------------------------------------------------------------------
-// Net and bump representations
+// Net and layer settings
 // -----------------------------------------------------------------------------
 
 struct NetInfo {
@@ -122,19 +120,58 @@ struct NetInfo {
     bool     isGround = false;
 };
 
-struct Bump {
-    IdString netName;
-    double   x_um = 0.0;
-    double   y_um = 0.0;
+struct LayerGridResolution {
+    int nx = 0;
+    int ny = 0;
 };
 
 // -----------------------------------------------------------------------------
 // CoarsePdnBuilder3D
 // -----------------------------------------------------------------------------
+// Temporary records for metal stripes and vias
+struct StripeRec {
+    int netIndex   = -1;
+    int layerIndex = -1;
+    int x0 = 0, y0 = 0; // normalized DBU
+    int x1 = 0, y1 = 0; // x0<=x1, y0<=y1
+};
 
-struct LayerGridResolution {
-    int nx = 0;
-    int ny = 0;
+struct ViaRec {
+    int      netIndex = -1;
+    int      x = 0, y = 0; // DBU
+    IdString viaName;
+
+    int lb = -1; // bottom layer idx (resolved from tech via)
+    int lt = -1; // top layer idx
+
+    double g = 0.0; // conductance = 1/R
+};
+
+struct StripeBins2D {
+    int                           nx = 0, ny = 0;
+    std::vector<std::vector<int>> bins; // bins[iy*nx+ix] = stripe IDs
+
+    void init(int nx_, int ny_) {
+        nx = nx_;
+        ny = ny_;
+        bins.assign(nx * ny, {});
+    }
+
+    inline std::vector<int>& at(int ix, int iy) { return bins[iy * nx + ix]; }
+    inline const std::vector<int>& at(int ix, int iy) const {
+        return bins[iy * nx + ix];
+    }
+};
+
+struct StripeDerived {
+    StripeRec raw;
+    bool      isHorizontal = true;
+
+    // Representative indices on THIS (net,layer) grid:
+    // horizontal stripe -> repIy meaningful
+    // vertical stripe   -> repIx meaningful
+    int repIx = -1;
+    int repIy = -1;
 };
 
 class CoarsePdnBuilder3D {
@@ -207,9 +244,12 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // Stripe accumulation per (net,layer)
     // -----------------------------------------------------------------
-    void addStripeRectangle(const std::string& netName,
-                            const std::string& layerName, int x0Dbu, int y0Dbu,
-                            int x1Dbu, int y1Dbu);
+    void recordStripeRectangle(const std::string& netName,
+                               const std::string& layerName, int x0Dbu,
+                               int y0Dbu, int x1Dbu, int y1Dbu);
+    // void addStripeRectangle(const std::string& netName,
+    //                         const std::string& layerName, int x0Dbu, int
+    //                         y0Dbu, int x1Dbu, int y1Dbu);
 
     void accumulateHorizontalStripe(ConductanceGrid2D& grid,
                                     const TechLayer& layer, double x0,
@@ -222,8 +262,11 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // Via accumulation
     // -----------------------------------------------------------------
-    void addViaInstance(const std::string& netName, const std::string& viaName,
-                        int xDbu, int yDbu);
+    void recordViaInstance(const std::string& netName,
+                           const std::string& viaName, int xDbu, int yDbu);
+    // void addViaInstance(const std::string& netName, const std::string&
+    // viaName,
+    //                     int xDbu, int yDbu);
     void addTsvInstance(const std::string& instName,
                         const std::string& macroName, int xDbu, int yDbu);
 
@@ -234,6 +277,7 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // CircuitGraph construction
     // -----------------------------------------------------------------
+    void finalizeRecordedPdnGeometry();
     void buildCircuitGraph(CircuitGraph& graph);
 
     // Parse RECT coordinates from token stream.
@@ -295,6 +339,9 @@ class CoarsePdnBuilder3D {
     // Vertical via/TSV grids
     std::vector<ViaGrid3D>                 mViaGrids;
     std::unordered_map<std::uint64_t, int> mViaGridLookup;
+
+    std::vector<StripeRec> mRecordedStripes;
+    std::vector<ViaRec>    mRecordedVias;
 };
 
 // Inline accessors for small structs
@@ -314,54 +361,44 @@ inline const double& ConductanceGrid2D::gy(int ix, int iy) const {
     return Gy[static_cast<std::size_t>(ix + nx * iy)];
 }
 
-inline double& ViaGrid3D::g(int bIx, int bIy, int tIx, int tIy) {
-    PDN_FATAL_IF(bIx < 0 || bIx >= bottomNx,
+inline double& ViaGrid3D::g(int ixB, int iyB, int ixT, int iyT) {
+    PDN_FATAL_IF(ixB < 0 || ixB >= nxB,
                  "Bottom-X index %d beyond scope (0, %d)",
-                 bIx,
-                 bottomNx);
-    PDN_FATAL_IF(bIy < 0 || bIy >= bottomNy,
+                 ixB,
+                 nxB);
+    PDN_FATAL_IF(iyB < 0 || iyB >= nyB,
                  "Bottom-Y index %d beyond scope (0, %d)",
-                 bIy,
-                 bottomNy);
-    PDN_FATAL_IF(tIx < 0 || tIx >= topNx,
-                 "Top-X index %d beyond scope (0, %d)",
-                 tIx,
-                 topNx);
-    PDN_FATAL_IF(tIy < 0 || tIy >= topNy,
-                 "Top-Y index %d beyond scope (0, %d)",
-                 tIy,
-                 topNy);
+                 iyB,
+                 nyB);
+    PDN_FATAL_IF(
+      ixT < 0 || ixT >= nxT, "Top-X index %d beyond scope (0, %d)", ixT, nxT);
+    PDN_FATAL_IF(
+      iyT < 0 || iyT >= nyT, "Top-Y index %d beyond scope (0, %d)", iyT, nyT);
 
-    const std::uint32_t bFlat =
-      static_cast<std::uint32_t>(bIy * bottomNx + bIx);
-    const std::uint32_t tFlat = static_cast<std::uint32_t>(tIy * topNx + tIx);
+    const std::uint32_t flatB = static_cast<std::uint32_t>(iyB * nxB + ixB);
+    const std::uint32_t flatT = static_cast<std::uint32_t>(iyT * nxT + ixT);
 
-    return edgeG.at(packEdge(bFlat, tFlat));
+    return edgeG.at(packEdge(flatB, flatT));
 }
 
-inline const double& ViaGrid3D::g(int bIx, int bIy, int tIx, int tIy) const {
-    PDN_FATAL_IF(bIx < 0 || bIx >= bottomNx,
+inline const double& ViaGrid3D::g(int ixB, int iyB, int ixT, int iyT) const {
+    PDN_FATAL_IF(ixB < 0 || ixB >= nxB,
                  "Bottom-X index %d beyond scope (0, %d)",
-                 bIx,
-                 bottomNx);
-    PDN_FATAL_IF(bIy < 0 || bIy >= bottomNy,
+                 ixB,
+                 nxB);
+    PDN_FATAL_IF(iyB < 0 || iyB >= nyB,
                  "Bottom-Y index %d beyond scope (0, %d)",
-                 bIy,
-                 bottomNy);
-    PDN_FATAL_IF(tIx < 0 || tIx >= topNx,
-                 "Top-X index %d beyond scope (0, %d)",
-                 tIx,
-                 topNx);
-    PDN_FATAL_IF(tIy < 0 || tIy >= topNy,
-                 "Top-Y index %d beyond scope (0, %d)",
-                 tIy,
-                 topNy);
+                 iyB,
+                 nyB);
+    PDN_FATAL_IF(
+      ixT < 0 || ixT >= nxT, "Top-X index %d beyond scope (0, %d)", ixT, nxT);
+    PDN_FATAL_IF(
+      iyT < 0 || iyT >= nyT, "Top-Y index %d beyond scope (0, %d)", iyT, nyT);
 
-    const std::uint32_t bFlat =
-      static_cast<std::uint32_t>(bIy * bottomNx + bIx);
-    const std::uint32_t tFlat = static_cast<std::uint32_t>(tIy * topNx + tIx);
+    const std::uint32_t flatB = static_cast<std::uint32_t>(iyB * nxB + ixB);
+    const std::uint32_t flatT = static_cast<std::uint32_t>(iyT * nxT + ixT);
 
-    return edgeG.at(packEdge(bFlat, tFlat));
+    return edgeG.at(packEdge(flatB, flatT));
 }
 
 } // namespace pdnsol

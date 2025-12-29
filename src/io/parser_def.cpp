@@ -98,45 +98,40 @@ void ConductanceGrid2D::init(int nx_, int ny_, double xMin_, double xMax_,
 // ViaGrid3D implementation
 // -----------------------------------------------------------------------------
 
-void ViaGrid3D::init(int netIdx, int lb, int lt, int bNx, int bNy, int tNx,
-                     int tNy) {
+void ViaGrid3D::init(int netIdx, int lb, int lt, int nxB, int nyB, int nxT,
+                     int nyT) {
     netIndex       = netIdx;
     bottomLayerIdx = lb;
     topLayerIdx    = lt;
 
-    bottomNx = bNx;
-    bottomNy = bNy;
-    topNx    = tNx;
-    topNy    = tNy;
+    this->nxB = nxB;
+    this->nyB = nyB;
+    this->nxT = nxT;
+    this->nyT = nyT;
 
     edgeG.clear();
 }
 
-void ViaGrid3D::addConductance(int bIx, int bIy, int tIx, int tIy, double dG) {
+void ViaGrid3D::addConductance(int ixB, int iyB, int ixT, int iyT, double dG) {
     if (dG <= 0.0) return;
 
-    PDN_FATAL_IF(bIx < 0 || bIx >= bottomNx,
+    PDN_FATAL_IF(ixB < 0 || ixB >= nxB,
                  "Bottom-X index %d beyond scope (0, %d)",
-                 bIx,
-                 bottomNx);
-    PDN_FATAL_IF(bIy < 0 || bIy >= bottomNy,
+                 ixB,
+                 nxB);
+    PDN_FATAL_IF(iyB < 0 || iyB >= nyB,
                  "Bottom-Y index %d beyond scope (0, %d)",
-                 bIy,
-                 bottomNy);
-    PDN_FATAL_IF(tIx < 0 || tIx >= topNx,
-                 "Top-X index %d beyond scope (0, %d)",
-                 tIx,
-                 topNx);
-    PDN_FATAL_IF(tIy < 0 || tIy >= topNy,
-                 "Top-Y index %d beyond scope (0, %d)",
-                 tIy,
-                 topNy);
+                 iyB,
+                 nyB);
+    PDN_FATAL_IF(
+      ixT < 0 || ixT >= nxT, "Top-X index %d beyond scope (0, %d)", ixT, nxT);
+    PDN_FATAL_IF(
+      iyT < 0 || iyT >= nyT, "Top-Y index %d beyond scope (0, %d)", iyT, nyT);
 
-    const std::uint32_t bFlat =
-      static_cast<std::uint32_t>(bIy * bottomNx + bIx);
-    const std::uint32_t tFlat = static_cast<std::uint32_t>(tIy * topNx + tIx);
+    const std::uint32_t flatB = static_cast<std::uint32_t>(iyB * nxB + ixB);
+    const std::uint32_t flatT = static_cast<std::uint32_t>(iyT * nxT + ixT);
 
-    edgeG[packEdge(bFlat, tFlat)] += dG; // parallel vias add conductance
+    edgeG[packEdge(flatB, flatT)] += dG; // parallel vias add conductance
 }
 
 struct TileNodeIdGrid {
@@ -236,6 +231,9 @@ bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string& defPath,
         return false;
     }
 
+    // Use recorded stripes/vias to build conductance grids
+    finalizeRecordedPdnGeometry();
+
     // Build CircuitGraph from all grids
     buildCircuitGraph(outGraph);
     return true;
@@ -334,8 +332,8 @@ void CoarsePdnBuilder3D::resetForNewBuild() {
     mInPlaneGrids.clear();
     mViaGrids.clear();
     mViaGridLookup.clear();
-    // mBumps.clear();
-    // mPinParseState.reset();
+    mRecordedStripes.clear();
+    mRecordedVias.clear();
 }
 
 // -----------------------------------------------------------------------------
@@ -387,13 +385,17 @@ void CoarsePdnBuilder3D::addStripeFromSegment(const std::string& netName,
         // Vertical stripe
         int yMin = std::min(y0, y1);
         int yMax = std::max(y0, y1);
-        addStripeRectangle(
+        // addStripeRectangle(
+        //   netName, layerName, x0 - half, yMin, x0 + half, yMax);
+        recordStripeRectangle(
           netName, layerName, x0 - half, yMin, x0 + half, yMax);
     } else if (y0 == y1) {
         // Horizontal stripe
         int xMin = std::min(x0, x1);
         int xMax = std::max(x0, x1);
-        addStripeRectangle(
+        // addStripeRectangle(
+        //   netName, layerName, xMin, y0 - half, xMax, y0 + half);
+        recordStripeRectangle(
           netName, layerName, xMin, y0 - half, xMax, y0 + half);
     } else {
         // Non-Manhattan (unlikely in PDN); fall back to bounding box.
@@ -401,7 +403,8 @@ void CoarsePdnBuilder3D::addStripeFromSegment(const std::string& netName,
         int xMax = std::max(x0, x1);
         int yMin = std::min(y0, y1);
         int yMax = std::max(y0, y1);
-        addStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
+        // addStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
+        recordStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
     }
 }
 
@@ -557,7 +560,7 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
         if (tok == "ROUTED" || tok == "NEW") {
             ++i;
             if (i < n) {
-                currentLayerName = tokens[i++];
+                currentLayerName = stripDefQuotes(tokens[i++]);
             } else {
                 break;
             }
@@ -600,7 +603,8 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                     tokens[i] != ";") {
                     // Via instantiation: (x y) viaName
                     const std::string& viaName = tokens[i++];
-                    addViaInstance(currentNetName, viaName, x0, y0);
+                    // addViaInstance(currentNetName, viaName, x0, y0);
+                    recordViaInstance(currentNetName, viaName, x0, y0);
                 } else if (i < n && tokens[i] == "(") {
                     // Wire segment: (x0 y0) (x1 y1) ...
                     int x1 = 0, y1 = 0;
@@ -684,7 +688,8 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                 if (i < n && tokens[i] != "(" && tokens[i] != "+" &&
                     tokens[i] != ";") {
                     const std::string& viaName = tokens[i++];
-                    addViaInstance(currentNetName, viaName, x0, y0);
+                    // addViaInstance(currentNetName, viaName, x0, y0);
+                    recordViaInstance(currentNetName, viaName, x0, y0);
                     inShapeBlock = false; // End of shape block
                     continue;
                 }
@@ -750,7 +755,7 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
         if (tok == "LAYER") {
             ++i;
             if (i < n) {
-                currentLayerName = tokens[i++];
+                currentLayerName = stripDefQuotes(tokens[i++]);
             }
             continue;
         }
@@ -999,46 +1004,103 @@ void CoarsePdnBuilder3D::handleComponentsLine(const std::string& line,
 }
 
 // -----------------------------------------------------------------------------
+// Representative coordinate helpers
+// -----------------------------------------------------------------------------
+
+static int representativeRow(const ConductanceGrid2D& grid, double y0,
+                             double y1) {
+    const int    ny   = grid.ny;
+    const double dy   = grid.dy;
+    double       yMid = (y0 + y1) / 2;
+    int          jMid =
+      clamp(static_cast<int>(std::floor((yMid - grid.yMin) / dy)), 0, ny - 1);
+    return jMid;
+}
+
+static int representativeCol(const ConductanceGrid2D& grid, double x0,
+                             double x1) {
+    const int    nx   = grid.nx;
+    const double dx   = grid.dx;
+    double       xMid = (x0 + x1) / 2;
+    int          iMid =
+      clamp(static_cast<int>(std::floor((xMid - grid.xMin) / dx)), 0, nx - 1);
+    return iMid;
+}
+
+// -----------------------------------------------------------------------------
 // Stripe accumulation per (net,layer)
 // -----------------------------------------------------------------------------
 
-void CoarsePdnBuilder3D::addStripeRectangle(const std::string& netName,
-                                            const std::string& layerName,
-                                            int x0Dbu, int y0Dbu, int x1Dbu,
-                                            int y1Dbu) {
+void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
+                                           const std::string& viaName,
+                                           int xDbu, int yDbu) {
     auto netIt = mNetByName.find(IdString::tryLookup(netName));
     if (netIt == mNetByName.end()) return;
-    int netIndex = netIt->second.index;
+    const int netIndex = netIt->second.index;
 
-    auto layerIdxIt = mLayerNameToIndex.find(IdString::tryLookup(layerName));
-    if (layerIdxIt == mLayerNameToIndex.end()) return;
-    int layerIndex = layerIdxIt->second;
+    const TechVia* via = mTechDb.getVia(IdString::tryLookup(viaName));
+    if (!via) return;
+    if (via->resistance <= 0.0) return;
 
-    const TechLayer* layer = mTechDb.getLayer(IdString::tryLookup(layerName));
-    if (!layer) return;
+    auto blIt = mLayerNameToIndex.find(via->bottomLayer);
+    auto tlIt = mLayerNameToIndex.find(via->topLayer);
+    if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
+        return;
 
-    // Convert to µm
-    double x0 = static_cast<double>(x0Dbu) / mDbuPerMicron;
-    double y0 = static_cast<double>(y0Dbu) / mDbuPerMicron;
-    double x1 = static_cast<double>(x1Dbu) / mDbuPerMicron;
-    double y1 = static_cast<double>(y1Dbu) / mDbuPerMicron;
+    int lb = blIt->second;
+    int lt = tlIt->second;
+    if (lb < 0 || lb >= mNumLayers || lt < 0 || lt >= mNumLayers) return;
+    if (lb == lt) return;
 
-    if (x1 < x0) std::swap(x0, x1);
-    if (y1 < y0) std::swap(y0, y1);
+    ViaRec v;
+    v.netIndex = netIndex;
+    v.x        = xDbu;
+    v.y        = yDbu;
+    v.viaName  = IdString::tryLookup(viaName);
+    v.lb       = lb;
+    v.lt       = lt;
+    v.g        = 1.0 / via->resistance;
 
-    double widthX = x1 - x0;
-    double widthY = y1 - y0;
-    if (widthX <= 0.0 || widthY <= 0.0) return;
-
-    bool isHorizontal = (widthX >= widthY);
-
-    ConductanceGrid2D& grid = mInPlaneGrids[netIndex][layerIndex];
-    if (isHorizontal) {
-        accumulateHorizontalStripe(grid, *layer, x0, y0, x1, y1);
-    } else {
-        accumulateVerticalStripe(grid, *layer, x0, y0, x1, y1);
-    }
+    mRecordedVias.push_back(v);
 }
+
+// void CoarsePdnBuilder3D::addStripeRectangle(const std::string& netName,
+//                                             const std::string& layerName,
+//                                             int x0Dbu, int y0Dbu, int x1Dbu,
+//                                             int y1Dbu) {
+//     auto netIt = mNetByName.find(IdString::tryLookup(netName));
+//     if (netIt == mNetByName.end()) return;
+//     int netIndex = netIt->second.index;
+
+//     auto layerIdxIt =
+//     mLayerNameToIndex.find(IdString::tryLookup(layerName)); if (layerIdxIt
+//     == mLayerNameToIndex.end()) return; int layerIndex = layerIdxIt->second;
+
+//     const TechLayer* layer =
+//     mTechDb.getLayer(IdString::tryLookup(layerName)); if (!layer) return;
+
+//     // Convert to µm
+//     double x0 = static_cast<double>(x0Dbu) / mDbuPerMicron;
+//     double y0 = static_cast<double>(y0Dbu) / mDbuPerMicron;
+//     double x1 = static_cast<double>(x1Dbu) / mDbuPerMicron;
+//     double y1 = static_cast<double>(y1Dbu) / mDbuPerMicron;
+
+//     if (x1 < x0) std::swap(x0, x1);
+//     if (y1 < y0) std::swap(y0, y1);
+
+//     double widthX = x1 - x0;
+//     double widthY = y1 - y0;
+//     if (widthX <= 0.0 || widthY <= 0.0) return;
+
+//     bool isHorizontal = (widthX >= widthY);
+
+//     ConductanceGrid2D& grid = mInPlaneGrids[netIndex][layerIndex];
+//     if (isHorizontal) {
+//         accumulateHorizontalStripe(grid, *layer, x0, y0, x1, y1);
+//     } else {
+//         accumulateVerticalStripe(grid, *layer, x0, y0, x1, y1);
+//     }
+// }
 
 void CoarsePdnBuilder3D::accumulateHorizontalStripe(ConductanceGrid2D& grid,
                                                     const TechLayer&   layer,
@@ -1125,50 +1187,80 @@ void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
 // Via accumulation
 // -----------------------------------------------------------------------------
 
-void CoarsePdnBuilder3D::addViaInstance(const std::string& netName,
-                                        const std::string& viaName, int xDbu,
-                                        int yDbu) {
+void CoarsePdnBuilder3D::recordStripeRectangle(const std::string& netName,
+                                               const std::string& layerName,
+                                               int x0Dbu, int y0Dbu, int x1Dbu,
+                                               int y1Dbu) {
     auto netIt = mNetByName.find(IdString::tryLookup(netName));
     if (netIt == mNetByName.end()) return;
-    int netIndex = netIt->second.index;
+    const int netIndex = netIt->second.index;
 
-    const TechVia* via = mTechDb.getVia(IdString::tryLookup(viaName));
-    if (!via) return;
+    auto layerIdxIt = mLayerNameToIndex.find(IdString::tryLookup(layerName));
+    if (layerIdxIt == mLayerNameToIndex.end()) return;
+    const int layerIndex = layerIdxIt->second;
 
-    auto blIt = mLayerNameToIndex.find(via->bottomLayer);
-    auto tlIt = mLayerNameToIndex.find(via->topLayer);
-    if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
-        return;
+    // normalize
+    int x0 = std::min(x0Dbu, x1Dbu);
+    int x1 = std::max(x0Dbu, x1Dbu);
+    int y0 = std::min(y0Dbu, y1Dbu);
+    int y1 = std::max(y0Dbu, y1Dbu);
+    if (x1 <= x0 || y1 <= y0) return;
 
-    int lb = blIt->second;
-    int lt = tlIt->second;
+    StripeRec s;
+    s.netIndex   = netIndex;
+    s.layerIndex = layerIndex;
+    s.x0         = x0;
+    s.y0         = y0;
+    s.x1         = x1;
+    s.y1         = y1;
 
-    if (lb < 0 || lb >= mNumLayers || lt < 0 || lt >= mNumLayers) return;
-    if (mInPlaneGrids.empty()) return;
-
-    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
-
-    double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
-    double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
-
-    // Use the per-layer grids’ geometry assuming all grids share die bbox
-    const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
-    const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
-
-    const int bIx =
-      clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
-    const int bIy =
-      clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
-
-    const int tIx =
-      clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
-    const int tIy =
-      clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
-
-    if (via->resistance <= 0.0) return;
-
-    vg.addConductance(bIx, bIy, tIx, tIy, 1.0 / via->resistance);
+    mRecordedStripes.push_back(s);
 }
+
+// void CoarsePdnBuilder3D::addViaInstance(const std::string& netName,
+//                                         const std::string& viaName, int
+//                                         xDbu, int yDbu) {
+//     auto netIt = mNetByName.find(IdString::tryLookup(netName));
+//     if (netIt == mNetByName.end()) return;
+//     int netIndex = netIt->second.index;
+
+//     const TechVia* via = mTechDb.getVia(IdString::tryLookup(viaName));
+//     if (!via) return;
+
+//     auto blIt = mLayerNameToIndex.find(via->bottomLayer);
+//     auto tlIt = mLayerNameToIndex.find(via->topLayer);
+//     if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
+//         return;
+
+//     int lb = blIt->second;
+//     int lt = tlIt->second;
+
+//     if (lb < 0 || lb >= mNumLayers || lt < 0 || lt >= mNumLayers) return;
+//     if (mInPlaneGrids.empty()) return;
+
+//     ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
+
+//     double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
+//     double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
+
+//     // Use the per-layer grids’ geometry assuming all grids share die bbox
+//     const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
+//     const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
+
+//     const int ixB =
+//       clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
+//     const int iyB =
+//       clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
+
+//     const int ixT =
+//       clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
+//     const int iyT =
+//       clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
+
+//     if (via->resistance <= 0.0) return;
+
+//     vg.addConductance(ixB, iyB, ixT, iyT, 1.0 / via->resistance);
+// }
 
 // Get the "VDD_PERI_MEDIA1" part out of U_TSV_PG_Power1_VDD_PERI_MEDIA1_0
 static std::string extractNetNameFromInstance(const std::string& instName,
@@ -1255,23 +1347,23 @@ void CoarsePdnBuilder3D::addTsvInstance(const std::string& instName,
     double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
     double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
 
-        // Use the per-layer grids’ geometry assuming all grids share die bbox
-        const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
-        const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
-    
-        const int bIx =
-          clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
-        const int bIy =
-          clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
-    
-        const int tIx =
-          clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
-        const int tIy =
-          clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
-    
-        if (tsv->resistance <= 0.0) return;
-    
-        vg.addConductance(bIx, bIy, tIx, tIy, 1.0 / tsv->resistance);
+    // Use the per-layer grids’ geometry assuming all grids share die bbox
+    const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
+    const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
+
+    const int ixB =
+      clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
+    const int iyB =
+      clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
+
+    const int ixT =
+      clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
+    const int iyT =
+      clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
+
+    if (tsv->resistance <= 0.0) return;
+
+    vg.addConductance(ixB, iyB, ixT, iyT, 1.0 / tsv->resistance);
 }
 
 ViaGrid3D& CoarsePdnBuilder3D::getOrCreateViaGrid(int netIndex, int lb,
@@ -1306,6 +1398,235 @@ std::uint64_t CoarsePdnBuilder3D::makeViaKey(int netIndex, int lb, int lt) {
 // -----------------------------------------------------------------------------
 // CircuitGraph construction
 // -----------------------------------------------------------------------------
+void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
+    if (mRecordedStripes.empty() && mRecordedVias.empty()) {
+        return;
+    }
+
+    // ---------------------------------------------------------------------
+    // 0) Build a per-(net,layer) spatial lookup of stripes on the coarse tiles
+    // ---------------------------------------------------------------------
+    struct StripeSpatialIndex {
+        int nx = 0;
+        int ny = 0;
+        std::vector<std::vector<int>>
+          buckets; // buckets[iy*nx+ix] -> stripe indices
+
+        void init(int nx_, int ny_) {
+            nx = nx_;
+            ny = ny_;
+            buckets.assign(static_cast<std::size_t>(nx * ny), {});
+        }
+
+        std::vector<int>& at(int ix, int iy) {
+            return buckets[static_cast<std::size_t>(iy * nx + ix)];
+        }
+        const std::vector<int>& at(int ix, int iy) const {
+            return buckets[static_cast<std::size_t>(iy * nx + ix)];
+        }
+    };
+
+    std::vector<std::vector<StripeSpatialIndex>> stripeIndex;
+    stripeIndex.resize(static_cast<std::size_t>(mNumNets));
+    for (int n = 0; n < mNumNets; ++n) {
+        stripeIndex[n].resize(static_cast<std::size_t>(mNumLayers));
+        for (int l = 0; l < mNumLayers; ++l) {
+            const ConductanceGrid2D& g = mInPlaneGrids[n][l];
+            stripeIndex[n][l].init(g.nx, g.ny);
+        }
+    }
+
+    auto tileIndexOfPoint = [&](const ConductanceGrid2D& g,
+                                double                   x_um,
+                                double y_um) -> std::pair<int, int> {
+        const int ix = clamp(
+          static_cast<int>(std::floor((x_um - g.xMin) / g.dx)), 0, g.nx - 1);
+        const int iy = clamp(
+          static_cast<int>(std::floor((y_um - g.yMin) / g.dy)), 0, g.ny - 1);
+        return {ix, iy};
+    };
+
+    // Insert each stripe into the buckets of tiles it overlaps (bbox in
+    // tile-space).
+    for (std::size_t sIdx = 0; sIdx < mRecordedStripes.size(); ++sIdx) {
+        const StripeRec& s = mRecordedStripes[sIdx];
+        if (s.netIndex < 0 || s.netIndex >= mNumNets) continue;
+        if (s.layerIndex < 0 || s.layerIndex >= mNumLayers) continue;
+
+        const ConductanceGrid2D& g = mInPlaneGrids[s.netIndex][s.layerIndex];
+
+        const double x0_um = static_cast<double>(s.x0) / mDbuPerMicron;
+        const double y0_um = static_cast<double>(s.y0) / mDbuPerMicron;
+        const double x1_um = static_cast<double>(s.x1) / mDbuPerMicron;
+        const double y1_um = static_cast<double>(s.y1) / mDbuPerMicron;
+
+        // Convert stripe bbox to a tile index range (inclusive).
+        const int ix0 = clamp(
+          static_cast<int>(std::floor((x0_um - g.xMin) / g.dx)), 0, g.nx - 1);
+        const int ix1 = clamp(
+          static_cast<int>(std::floor((x1_um - g.xMin) / g.dx)), 0, g.nx - 1);
+        const int iy0 = clamp(
+          static_cast<int>(std::floor((y0_um - g.yMin) / g.dy)), 0, g.ny - 1);
+        const int iy1 = clamp(
+          static_cast<int>(std::floor((y1_um - g.yMin) / g.dy)), 0, g.ny - 1);
+
+        for (int iy = iy0; iy <= iy1; ++iy) {
+            for (int ix = ix0; ix <= ix1; ++ix) {
+                stripeIndex[s.netIndex][s.layerIndex].at(ix, iy).push_back(
+                  static_cast<int>(sIdx));
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 1) Discretize all stripes into in-plane conductance grids
+    // ---------------------------------------------------------------------
+    for (const StripeRec& s : mRecordedStripes) {
+        if (s.netIndex < 0 || s.netIndex >= mNumNets) continue;
+        if (s.layerIndex < 0 || s.layerIndex >= mNumLayers) continue;
+
+        const TechLayer* layer = mTechDb.getLayer(mLayerOrder[s.layerIndex]);
+        if (!layer) continue;
+
+        // Convert to µm
+        double x0 = static_cast<double>(s.x0) / mDbuPerMicron;
+        double y0 = static_cast<double>(s.y0) / mDbuPerMicron;
+        double x1 = static_cast<double>(s.x1) / mDbuPerMicron;
+        double y1 = static_cast<double>(s.y1) / mDbuPerMicron;
+
+        if (x1 < x0) std::swap(x0, x1);
+        if (y1 < y0) std::swap(y0, y1);
+
+        const double wX = x1 - x0;
+        const double wY = y1 - y0;
+        if (wX <= 0.0 || wY <= 0.0) continue;
+
+        ConductanceGrid2D& grid = mInPlaneGrids[s.netIndex][s.layerIndex];
+        const bool         isHorizontal = (wX >= wY);
+        if (isHorizontal) {
+            accumulateHorizontalStripe(grid, *layer, x0, y0, x1, y1);
+        } else {
+            accumulateVerticalStripe(grid, *layer, x0, y0, x1, y1);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // 2) Allocate vias to the "metal tile" they belong to, then add via G
+    // ---------------------------------------------------------------------
+    auto allocateViaEndpoint = [&](int netIndex,
+                                   int layerIndex,
+                                   int xDbu,
+                                   int yDbu) -> std::pair<int, int> {
+        const ConductanceGrid2D& g = mInPlaneGrids[netIndex][layerIndex];
+
+        const double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
+        const double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
+
+        auto [ixRaw, iyRaw] = tileIndexOfPoint(g, x_um, y_um);
+
+        const std::vector<int>& candidates =
+          stripeIndex[netIndex][layerIndex].at(ixRaw, iyRaw);
+
+        // Find best horizontal stripe (closest centerline) and best vertical
+        // stripe.
+        int       bestH      = -1;
+        long long bestHDist  = std::numeric_limits<long long>::max();
+        long long bestHWidth = std::numeric_limits<long long>::max();
+
+        int       bestV      = -1;
+        long long bestVDist  = std::numeric_limits<long long>::max();
+        long long bestVWidth = std::numeric_limits<long long>::max();
+
+        // Tolerance in DBU to avoid "on-the-edge" misses due to integer
+        // half-width truncation.
+        constexpr int tolDbu = 1;
+
+        for (int sIdx : candidates) {
+            const StripeRec& s =
+              mRecordedStripes[static_cast<std::size_t>(sIdx)];
+            // (Should already match net/layer, but keep defensive)
+            if (s.netIndex != netIndex || s.layerIndex != layerIndex) continue;
+
+            if (xDbu < s.x0 - tolDbu || xDbu > s.x1 + tolDbu ||
+                yDbu < s.y0 - tolDbu || yDbu > s.y1 + tolDbu) {
+                continue;
+            }
+
+            const long long dx           = static_cast<long long>(s.x1) - s.x0;
+            const long long dy           = static_cast<long long>(s.y1) - s.y0;
+            const bool      isHorizontal = (dx >= dy);
+
+            if (isHorizontal) {
+                // distance to horizontal stripe centerline in y, in "2*DBU"
+                // units
+                const long long dist =
+                  std::llabs(2LL * static_cast<long long>(yDbu) -
+                             (static_cast<long long>(s.y0) + s.y1));
+                const long long width = dy;
+
+                if (dist < bestHDist ||
+                    (dist == bestHDist && width < bestHWidth)) {
+                    bestHDist  = dist;
+                    bestHWidth = width;
+                    bestH      = sIdx;
+                }
+            } else {
+                // distance to vertical stripe centerline in x
+                const long long dist =
+                  std::llabs(2LL * static_cast<long long>(xDbu) -
+                             (static_cast<long long>(s.x0) + s.x1));
+                const long long width = dx;
+
+                if (dist < bestVDist ||
+                    (dist == bestVDist && width < bestVWidth)) {
+                    bestVDist  = dist;
+                    bestVWidth = width;
+                    bestV      = sIdx;
+                }
+            }
+        }
+
+        int ix = ixRaw;
+        int iy = iyRaw;
+
+        // Snap row to the horizontal stripe's representative row (if any).
+        if (bestH >= 0) {
+            const StripeRec& s =
+              mRecordedStripes[static_cast<std::size_t>(bestH)];
+            const double y0_um = static_cast<double>(s.y0) / mDbuPerMicron;
+            const double y1_um = static_cast<double>(s.y1) / mDbuPerMicron;
+            iy                 = representativeRow(g, y0_um, y1_um);
+        }
+
+        // Snap col to the vertical stripe's representative col (if any).
+        if (bestV >= 0) {
+            const StripeRec& s =
+              mRecordedStripes[static_cast<std::size_t>(bestV)];
+            const double x0_um = static_cast<double>(s.x0) / mDbuPerMicron;
+            const double x1_um = static_cast<double>(s.x1) / mDbuPerMicron;
+            ix                 = representativeCol(g, x0_um, x1_um);
+        }
+
+        return {ix, iy};
+    };
+
+    for (const ViaRec& v : mRecordedVias) {
+        if (v.netIndex < 0 || v.netIndex >= mNumNets) continue;
+        if (v.lb < 0 || v.lb >= mNumLayers) continue;
+        if (v.lt < 0 || v.lt >= mNumLayers) continue;
+        if (v.g <= 0.0) continue;
+
+        auto [ixB, iyB] = allocateViaEndpoint(v.netIndex, v.lb, v.x, v.y);
+        auto [ixT, iyT] = allocateViaEndpoint(v.netIndex, v.lt, v.x, v.y);
+
+        ViaGrid3D& vg = getOrCreateViaGrid(v.netIndex, v.lb, v.lt);
+        vg.addConductance(ixB, iyB, ixT, iyT, v.g);
+    }
+
+    // Free memory since I don't need the raw records after discretization
+    mRecordedStripes.clear();
+    mRecordedVias.clear();
+}
 
 void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
     graph.mCoordinateUnit = CircuitGraph::UM;
@@ -1439,25 +1760,25 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
 
             const double R = 1.0 / G;
 
-            std::uint32_t bFlat = 0, tFlat = 0;
-            ViaGrid3D::unpackEdge(edgeKey, bFlat, tFlat);
+            std::uint32_t flatB = 0, flatT = 0;
+            ViaGrid3D::unpackEdge(edgeKey, flatB, flatT);
 
-            const int bIx = static_cast<int>(
-              bFlat % static_cast<std::uint32_t>(vg.bottomNx));
-            const int bIy = static_cast<int>(
-              bFlat / static_cast<std::uint32_t>(vg.bottomNx));
-            const int tIx =
-              static_cast<int>(tFlat % static_cast<std::uint32_t>(vg.topNx));
-            const int tIy =
-              static_cast<int>(tFlat / static_cast<std::uint32_t>(vg.topNx));
+            const int ixB =
+              static_cast<int>(flatB % static_cast<std::uint32_t>(vg.nxB));
+            const int iyB =
+              static_cast<int>(flatB / static_cast<std::uint32_t>(vg.nxB));
+            const int ixT =
+              static_cast<int>(flatT % static_cast<std::uint32_t>(vg.nxT));
+            const int iyT =
+              static_cast<int>(flatT / static_cast<std::uint32_t>(vg.nxT));
 
-            IdString bottomId = tileNodeIds[netIndex][lb].at(bIx, bIy);
-            IdString topId    = tileNodeIds[netIndex][lt].at(tIx, tIy);
+            IdString bottomId = tileNodeIds[netIndex][lb].at(ixB, iyB);
+            IdString topId    = tileNodeIds[netIndex][lt].at(ixT, iyT);
 
             std::ostringstream ossName;
             ossName << ni.name.str() << "_VIA_" << blName.str() << "_to_"
-                    << tlName.str() << "_B_" << bIx << "_" << bIy << "_T_"
-                    << tIx << "_" << tIy << "_" << viaCounter++;
+                    << tlName.str() << "_B_" << ixB << "_" << iyB << "_T_"
+                    << ixT << "_" << iyT << "_" << viaCounter++;
 
             ViaRes vr;
             vr.mName = IdString(ossName.str());
