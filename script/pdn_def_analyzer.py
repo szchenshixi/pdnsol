@@ -11,10 +11,16 @@ What it reports (per net-layer, e.g. VDD-met4):
   - VIAs: detected as trailing tokens after coordinate(s), summarized by via type
     including inferred pitch in X/Y (when possible) and outliers.
 
-Key fixes vs the flawed implementation:
-  1) FOLLOWPIN is analyzed like STRIPE (direction + pitch + outliers).
-  2) VIA handling is fixed: vias are detected from trailing via names like
-     "... ( x y ) via3_1920x980" (no "VIA" keyword required).
+DBU / real-unit handling:
+  DEF stores all distances as integers in "database units" (DBU).
+  The DEF statement:
+      UNITS DISTANCE MICRONS <N> ;
+  means: N DBU = 1 micron (um). Therefore:
+      value_um = value_dbu / N
+
+  IMPORTANT: This script keeps DBU integers internally (to avoid float rounding
+  issues in pitch inference and modulo alignment checks), and converts to um
+  only for reporting (and for convenience adds *_um fields in summaries).
 """
 
 from __future__ import annotations
@@ -22,13 +28,20 @@ from __future__ import annotations
 import argparse
 import math
 import re
+import sys
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Tuple, Any
 
+
 # -----------------------------
 # Regexes
 # -----------------------------
+
+UNITS_DISTANCE_RE = re.compile(
+    r"^\s*UNITS\s+DISTANCE\s+MICRONS\s+(\d+)\s*;",
+    re.IGNORECASE,
+)
 
 SPECIALNETS_START_RE = re.compile(r"^\s*SPECIALNETS\b", re.IGNORECASE)
 SPECIALNETS_END_RE = re.compile(r"^\s*END\s+SPECIALNETS\b", re.IGNORECASE)
@@ -64,10 +77,106 @@ NOT_A_VIA_TOKENS = {
     "+",
 }
 
+
+# -----------------------------
+# Units helpers
+# -----------------------------
+
+def read_def_units(def_file_path: str,
+                   *,
+                   default_dbu_per_micron: int = 1000) -> Dict[str, Any]:
+    """
+    Parse DEF database units from:
+        UNITS DISTANCE MICRONS <dbu_per_micron> ;
+
+    Returns:
+      {
+        "dbu_per_micron": int,
+        "microns_per_dbu": float,
+        "found": bool,
+        "line": Optional[int],
+      }
+
+    If the UNITS line is missing, falls back to default_dbu_per_micron.
+    """
+    with open(def_file_path, "r", errors="ignore") as f:
+        for lineno, raw_line in enumerate(f, start=1):
+            m = UNITS_DISTANCE_RE.match(raw_line)
+            if m:
+                dbu_per_micron = int(m.group(1))
+                if dbu_per_micron <= 0:
+                    raise ValueError(
+                        f"Invalid UNITS DISTANCE MICRONS {dbu_per_micron} at line {lineno}"
+                    )
+                return {
+                    "dbu_per_micron": dbu_per_micron,
+                    "microns_per_dbu": 1.0 / float(dbu_per_micron),
+                    "found": True,
+                    "line": lineno,
+                }
+
+    dbu_per_micron = int(default_dbu_per_micron)
+    if dbu_per_micron <= 0:
+        raise ValueError(
+            f"default_dbu_per_micron must be > 0 (got {dbu_per_micron})")
+
+    return {
+        "dbu_per_micron": dbu_per_micron,
+        "microns_per_dbu": 1.0 / float(dbu_per_micron),
+        "found": False,
+        "line": None,
+    }
+
+
+def dbu_to_um(value_dbu: Optional[float], dbu_per_micron: int) -> Optional[float]:
+    if value_dbu is None:
+        return None
+    return float(value_dbu) / float(dbu_per_micron)
+
+
+def _fmt_um(value_um: float, *, digits: int = 6) -> str:
+    s = f"{value_um:.{digits}f}"
+    # trim trailing zeros for readability
+    if "." in s:
+        s = s.rstrip("0").rstrip(".")
+    return s
+
+
+def fmt_dbu_and_um(value_dbu: Optional[float],
+                   dbu_per_micron: int,
+                   *,
+                   um_digits: int = 6) -> str:
+    if value_dbu is None:
+        return "N/A"
+    um = dbu_to_um(value_dbu, dbu_per_micron)
+    if um is None:
+        return "N/A"
+
+    # DBU formatting: keep integers as integers; floats as trimmed decimals.
+    if isinstance(value_dbu, int) or (isinstance(value_dbu, float)
+                                     and value_dbu.is_integer()):
+        dbu_str = str(int(value_dbu))
+    else:
+        dbu_str = f"{value_dbu:.3f}"
+        if "." in dbu_str:
+            dbu_str = dbu_str.rstrip("0").rstrip(".")
+    return f"{dbu_str} dbu ({_fmt_um(um, digits=um_digits)} um)"
+
+
+def fmt_xy_dbu_um(xy: Tuple[int, int],
+                  dbu_per_micron: int,
+                  *,
+                  um_digits: int = 6) -> str:
+    x, y = xy
+    x_um = dbu_to_um(x, dbu_per_micron) or 0.0
+    y_um = dbu_to_um(y, dbu_per_micron) or 0.0
+    return (f"({x}, {y}) dbu "
+            f"({_fmt_um(x_um, digits=um_digits)}, {_fmt_um(y_um, digits=um_digits)}) um")
+
+
 # -----------------------------
 # Data models
 # -----------------------------
-
 
 @dataclass(frozen=True)
 class Segment:
@@ -96,7 +205,6 @@ class Via:
 # -----------------------------
 # Parsing helpers
 # -----------------------------
-
 
 def _classify_segment(p1: Tuple[int, int],
                       p2: Tuple[int, int]) -> Tuple[str, Optional[int], float]:
@@ -342,10 +450,11 @@ def iter_specialnet_blocks(
 # Analysis
 # -----------------------------
 
-
 def _summarize_segments_for_net_layer(
     net_layer_key: str,
     segments: List[Segment],
+    *,
+    dbu_per_micron: int,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """
     Summarize stripe/followpin patterns and detect outliers.
@@ -363,7 +472,6 @@ def _summarize_segments_for_net_layer(
 
     for shape, segs in sorted(by_shape.items()):
         if shape not in {"STRIPE", "FOLLOWPIN"}:
-            # You can keep other shapes if needed; currently ignore in summary
             continue
 
         shape_summary: Dict[str, Any] = {
@@ -406,12 +514,18 @@ def _summarize_segments_for_net_layer(
             ]
             pitch_info = _infer_pitch([p for p in positions if p is not None])
 
+            pitch_dbu = pitch_info["pitch"]
+            dominant_width_um = dbu_to_um(dominant_width, dbu_per_micron)
+            pitch_um = dbu_to_um(pitch_dbu, dbu_per_micron)
+
             # Per-direction summary
             shape_summary.setdefault("by_direction", {})[direction] = {
                 "count": len(dir_segs),
                 "dominant_width": dominant_width,
+                "dominant_width_um": dominant_width_um,
                 "width_counts": dict(width_counts),
-                "pitch": pitch_info["pitch"],
+                "pitch": pitch_dbu,
+                "pitch_um": pitch_um,
                 "pitch_mode_fraction": pitch_info["mode_fraction"],
                 "unique_positions": len(pitch_info["unique_positions"]),
                 "diff_counts": pitch_info["diff_counts"],
@@ -435,7 +549,7 @@ def _summarize_segments_for_net_layer(
                         })
 
             # Pitch outliers: alignment + gap
-            pitch = pitch_info["pitch"]
+            pitch = pitch_dbu
             uniq_positions = pitch_info["unique_positions"]
 
             # Only attempt pitch-based outliers if we have enough data to infer a pattern.
@@ -502,6 +616,8 @@ def _summarize_segments_for_net_layer(
 def _summarize_vias_for_net_layer(
     net_layer_key: str,
     vias: List[Via],
+    *,
+    dbu_per_micron: int,
 ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     outliers: List[Dict[str, Any]] = []
     if not vias:
@@ -535,8 +651,10 @@ def _summarize_vias_for_net_layer(
         via_summary["via_types"][via_type] = {
             "count": len(vlist),
             "pitch_x": pitch_x,
+            "pitch_x_um": dbu_to_um(pitch_x, dbu_per_micron),
             "pitch_x_mode_fraction": pitch_x_info["mode_fraction"],
             "pitch_y": pitch_y,
+            "pitch_y_um": dbu_to_um(pitch_y, dbu_per_micron),
             "pitch_y_mode_fraction": pitch_y_info["mode_fraction"],
             "unique_x": len(pitch_x_info["unique_positions"]),
             "unique_y": len(pitch_y_info["unique_positions"]),
@@ -629,10 +747,15 @@ def _summarize_vias_for_net_layer(
 
 def analyze_def_pdn(def_file_path: str,
                     *,
-                    keep_raw: bool = False) -> Dict[str, Any]:
+                    keep_raw: bool = False,
+                    default_dbu_per_micron: int = 1000) -> Dict[str, Any]:
     """
     Main analysis entry point.
     """
+    units = read_def_units(def_file_path,
+                           default_dbu_per_micron=default_dbu_per_micron)
+    dbu_per_micron = int(units["dbu_per_micron"])
+
     segments_by_net_layer: Dict[Tuple[str, str],
                                 List[Segment]] = defaultdict(list)
     vias_by_net_layer: Dict[Tuple[str, str], List[Via]] = defaultdict(list)
@@ -659,8 +782,9 @@ def analyze_def_pdn(def_file_path: str,
         vs = vias_by_net_layer.get((net, layer), [])
 
         seg_summary, seg_outliers = _summarize_segments_for_net_layer(
-            key, segs)
-        via_summary, via_outliers = _summarize_vias_for_net_layer(key, vs)
+            key, segs, dbu_per_micron=dbu_per_micron)
+        via_summary, via_outliers = _summarize_vias_for_net_layer(
+            key, vs, dbu_per_micron=dbu_per_micron)
 
         patterns[key] = {
             "summary": {
@@ -677,21 +801,29 @@ def analyze_def_pdn(def_file_path: str,
         outliers.extend(seg_outliers)
         outliers.extend(via_outliers)
 
-    return {"patterns": patterns, "outliers": outliers}
+    return {"units": units, "patterns": patterns, "outliers": outliers}
 
 
 # -----------------------------
 # Printing
 # -----------------------------
 
-
-def _fmt_counts(counter_dict: Dict[Any, int], max_items: int = 6) -> str:
+def _fmt_counts(counter_dict: Dict[Any, int],
+                max_items: int = 6,
+                *,
+                key_fmt: Optional[Any] = None) -> str:
     if not counter_dict:
         return "{}"
     items = sorted(counter_dict.items(), key=lambda kv: (-kv[1], kv[0]))
     shown = items[:max_items]
     more = len(items) - len(shown)
-    s = ", ".join(f"{k}:{v}" for k, v in shown)
+
+    def _k(k: Any) -> str:
+        if key_fmt is None:
+            return str(k)
+        return str(key_fmt(k))
+
+    s = ", ".join(f"{_k(k)}:{v}" for k, v in shown)
     if more > 0:
         s += f", ... (+{more} more)"
     return "{" + s + "}"
@@ -700,9 +832,26 @@ def _fmt_counts(counter_dict: Dict[Any, int], max_items: int = 6) -> str:
 def print_analysis_results(results: Dict[str, Any],
                            *,
                            max_outliers: int = 100) -> None:
+    units = results.get("units", {}) or {}
+    dbu_per_micron = int(units.get("dbu_per_micron", 1000))
+    units_found = bool(units.get("found", False))
+    units_line = units.get("line", None)
+
+    if not units_found:
+        print(
+            f"WARNING: 'UNITS DISTANCE MICRONS ...' not found; assuming {dbu_per_micron} DBU/um",
+            file=sys.stderr,
+        )
+
     print("=" * 100)
     print("PDN SPECIALNETS Analysis")
     print("=" * 100)
+    print()
+    if units_found:
+        print(f"DEF Units: UNITS DISTANCE MICRONS {dbu_per_micron} ;  (found at line {units_line})")
+    else:
+        print(f"DEF Units: assumed UNITS DISTANCE MICRONS {dbu_per_micron} ;")
+    print(f"          1 dbu = {_fmt_um(1.0/float(dbu_per_micron), digits=9)} um")
     print()
 
     patterns = results.get("patterns", {})
@@ -736,15 +885,22 @@ def print_analysis_results(results: Dict[str, Any],
                     continue
                 dsum = by_dir[direction]
                 print(f"    {direction}: count={dsum['count']}")
-                print(f"      dominant_width: {dsum['dominant_width']}")
+
                 print(
-                    f"      width_counts: {_fmt_counts(dsum['width_counts'])}")
+                    f"      dominant_width: {fmt_dbu_and_um(dsum['dominant_width'], dbu_per_micron)}"
+                )
+                print(
+                    f"      width_counts: {_fmt_counts(dsum['width_counts'], key_fmt=lambda k: fmt_dbu_and_um(k, dbu_per_micron))}"
+                )
+
                 if dsum["pitch"] is not None:
+                    mf = dsum["pitch_mode_fraction"]
+                    mf_str = f"{mf:.3f}" if isinstance(mf, float) else str(mf)
                     print(
-                        f"      inferred_pitch: {dsum['pitch']} (mode_fraction={dsum['pitch_mode_fraction']:.3f})"
+                        f"      inferred_pitch: {fmt_dbu_and_um(dsum['pitch'], dbu_per_micron)} (mode_fraction={mf_str})"
                     )
                     print(
-                        f"      diff_counts: {_fmt_counts(dsum['diff_counts'])}"
+                        f"      diff_counts: {_fmt_counts(dsum['diff_counts'], key_fmt=lambda k: fmt_dbu_and_um(k, dbu_per_micron))}"
                     )
                 else:
                     print(
@@ -757,11 +913,19 @@ def print_analysis_results(results: Dict[str, Any],
             via_types = via_summary.get("via_types", {})
             for vt, vinfo in via_types.items():
                 print(f"    {vt}: count={vinfo['count']}")
+                px = vinfo.get("pitch_x", None)
+                py = vinfo.get("pitch_y", None)
+                pxmf = vinfo.get("pitch_x_mode_fraction", None)
+                pymf = vinfo.get("pitch_y_mode_fraction", None)
+
+                pxmf_str = f"{pxmf:.3f}" if isinstance(pxmf, float) else str(pxmf)
+                pymf_str = f"{pymf:.3f}" if isinstance(pymf, float) else str(pymf)
+
                 print(
-                    f"      pitch_x={vinfo['pitch_x']} (mode_fraction={vinfo['pitch_x_mode_fraction']}) unique_x={vinfo['unique_x']}"
+                    f"      pitch_x={fmt_dbu_and_um(px, dbu_per_micron)} (mode_fraction={pxmf_str}) unique_x={vinfo['unique_x']}"
                 )
                 print(
-                    f"      pitch_y={vinfo['pitch_y']} (mode_fraction={vinfo['pitch_y_mode_fraction']}) unique_y={vinfo['unique_y']}"
+                    f"      pitch_y={fmt_dbu_and_um(py, dbu_per_micron)} (mode_fraction={pymf_str}) unique_y={vinfo['unique_y']}"
                 )
 
     print("\n" + "-" * 100)
@@ -770,9 +934,30 @@ def print_analysis_results(results: Dict[str, Any],
             f"Outliers Detected: {len(outliers)} (showing up to {max_outliers})"
         )
         print("-" * 100)
+
+        # Fields that represent DBU distances/coordinates and are worth printing in both units.
+        DBU_SCALAR_FIELDS = {
+            "expected_width",
+            "actual_width",
+            "expected_pitch",
+            "expected_pitch_x",
+            "expected_pitch_y",
+            "gap",
+            "position",
+            "x",
+            "y",
+            "from_position",
+            "to_position",
+            "from_x",
+            "to_x",
+            "from_y",
+            "to_y",
+        }
+
         for o in outliers[:max_outliers]:
             print(f"\nType: {o.get('type')}")
             print(f"Net-Layer: {o.get('net_layer')}")
+
             # Print key fields if present
             for field in (
                     "shape",
@@ -781,17 +966,31 @@ def print_analysis_results(results: Dict[str, Any],
                     "expected_width",
                     "actual_width",
                     "expected_pitch",
+                    "expected_pitch_x",
+                    "expected_pitch_y",
                     "gap",
                     "position",
                     "x",
                     "y",
                     "expected_via_type",
                     "actual_via_type",
+                    "expected_mod",
+                    "actual_mod",
             ):
                 if field in o:
-                    print(f"{field}: {o[field]}")
+                    val = o[field]
+                    if field in DBU_SCALAR_FIELDS and isinstance(val, (int, float)):
+                        print(f"{field}: {fmt_dbu_and_um(val, dbu_per_micron)}")
+                    else:
+                        print(f"{field}: {val}")
+
+            # start/end coords if present
+            if "start" in o:
+                print(f"start: {fmt_xy_dbu_um(o['start'], dbu_per_micron)}")
+            if "end" in o:
+                print(f"end:   {fmt_xy_dbu_um(o['end'], dbu_per_micron)}")
+
             if "clause" in o:
-                # avoid printing extremely long clauses unbounded
                 clause = o["clause"]
                 if len(clause) > 300:
                     clause = clause[:300] + " ...[truncated]"
@@ -806,7 +1005,6 @@ def print_analysis_results(results: Dict[str, Any],
 # CLI
 # -----------------------------
 
-
 def main() -> None:
     ap = argparse.ArgumentParser(
         description="Analyze PDN stripes/followpins/vias in DEF SPECIALNETS.")
@@ -819,9 +1017,19 @@ def main() -> None:
         "--keep-raw",
         action="store_true",
         help="Store raw segments/vias in the result dict (memory heavy)")
+    ap.add_argument(
+        "--default-dbu-per-micron",
+        type=int,
+        default=1000,
+        help="Fallback DBU/um if UNITS DISTANCE MICRONS is missing",
+    )
     args = ap.parse_args()
 
-    results = analyze_def_pdn(args.def_file, keep_raw=args.keep_raw)
+    results = analyze_def_pdn(
+        args.def_file,
+        keep_raw=args.keep_raw,
+        default_dbu_per_micron=args.default_dbu_per_micron,
+    )
     print_analysis_results(results, max_outliers=args.max_outliers)
 
 
