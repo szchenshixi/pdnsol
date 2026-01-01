@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import math
 import re
 from collections import defaultdict
 
 import plotly.graph_objects as go
-import plotly.express as px
 
 
 class DSU:
@@ -59,41 +57,90 @@ def load_json(path):
 
 def compute_connectivity(nodes, edges):
     """
-    Replicates your sanitizer connectivity definition:
-    - metal, via, pkg, vsrc, isrc all create undirected connections.
+    Connectivity definition:
+    - metal, via, pkg, vsrc, isrc all create undirected connections *between real nodes*
+      when both endpoints exist in `nodes`.
+    - vsrc/isrc may connect a real node to an external endpoint that is NOT in `nodes`;
+      in that case, we still want to:
+        * count node degree
+        * mark the node as vsrc-/isrc-connected
+        * (for vsrc) mark its component as powered
+
     Returns:
       comp_of_node: node_id -> component_root_id
       components: root_id -> list[node_id]
-      powered_roots: set[root_id] (contains at least one vsrc edge)
-      degree: node_id -> degree across all edge types
+      powered_roots: set[root_id] (contains at least one vsrc-connected node)
+      degree: node_id -> degree across all edges that touch this node (even if the other endpoint is external)
+      vsrc_nodes: set[node_id]
+      isrc_nodes: set[node_id]
+      vsrc_edge_ids_by_node: node_id -> list[str edge_id]
+      isrc_edge_ids_by_node: node_id -> list[str edge_id]
     """
     dsu = DSU(nodes.keys())
     degree = defaultdict(int)
 
-    # Union all connections
+    vsrc_pkg_nodes = set()
+    vsrc_nodes = set()
+    isrc_nodes = set()
+    vsrc_edge_ids_by_node = defaultdict(list)
+    isrc_edge_ids_by_node = defaultdict(list)
+
     for e in edges:
         n1 = e.get("n1")
         n2 = e.get("n2")
+
+        # Degree should count any edge incident to a real node (even if the other endpoint is external)
+        if n1 in nodes:
+            degree[n1] += 1
+        if n2 in nodes:
+            degree[n2] += 1
+
+        # Connectivity only unions real nodes
         if n1 in nodes and n2 in nodes:
             dsu.union(n1, n2)
-            degree[n1] += 1
-            degree[n2] += 1
+
+        et = e.get("type")
+        if et in ("vsrc", "isrc"):
+            eid = e.get("id")
+            eid_s = str(eid) if eid is not None else "(no-id)"
+            for nid in (n1, n2):
+                if et == "vsrc":
+                    vsrc_pkg_nodes.add(nid)
+                    vsrc_edge_ids_by_node[nid].append(eid_s)
+                else:
+                    isrc_nodes.add(nid)
+                    isrc_edge_ids_by_node[nid].append(eid_s)
+    
+    # Second pass to include the pdn node that connects to the pkg voltage node
+    for e in edges:
+        n1 = e.get("n1")
+        n2 = e.get("n2")
+
+        if n1 in vsrc_pkg_nodes or n2 in vsrc_pkg_nodes:
+            vsrc_nodes.add(n1)
+            vsrc_nodes.add(n2)
 
     comp_of_node = {nid: dsu.find(nid) for nid in nodes.keys()}
     components = defaultdict(list)
     for nid, root in comp_of_node.items():
         components[root].append(nid)
 
-    # Powered components: any component that contains a Vsrc
-    powered_roots = set()
-    for e in edges:
-        if e.get("type") != "vsrc":
-            continue
-        n1 = e.get("n1")
-        if n1 in nodes:
-            powered_roots.add(comp_of_node[n1])
+    # Powered components: any component that contains at least one vsrc-connected node
+    powered_roots = {
+        comp_of_node[nid]
+        for nid in vsrc_nodes if nid in comp_of_node
+    }
 
-    return comp_of_node, components, powered_roots, degree
+    return (
+        comp_of_node,
+        components,
+        powered_roots,
+        degree,
+        vsrc_nodes,
+        isrc_nodes,
+        vsrc_edge_ids_by_node,
+        isrc_edge_ids_by_node,
+    )
 
 
 def component_summary(nodes, components, powered_roots):
@@ -102,7 +149,7 @@ def component_summary(nodes, components, powered_roots):
     """
     rows = []
     for root, nids in components.items():
-        layers = sorted({nodes[n]["layer"] for n in nids})
+        layers = sorted({nodes[n].get("layer") for n in nids})
         xs = [
             nodes[n]["x_um"] for n in nids if nodes[n].get("x_um") is not None
         ]
@@ -117,23 +164,42 @@ def component_summary(nodes, components, powered_roots):
             "nodes": len(nids),
             "powered": (root in powered_roots),
             "layers": layers,
-            "bbox": bbox
+            "bbox": bbox,
         })
     rows.sort(key=lambda r: r["nodes"], reverse=True)
     return rows
 
 
-def make_layer_figure(nodes,
-                      edges,
-                      comp_of_node,
-                      powered_roots,
-                      degree,
-                      layer: str,
-                      net: str,
-                      only_isolated: bool = False,
-                      focus_component_root: str | None = None,
-                      show_background: bool = True):
-    # Collect nodes on this layer
+def _short_list(items, max_items=8):
+    """
+    Render a list like [a, b, c] but truncate if it's long.
+    """
+    if not items:
+        return "[]"
+    s = [str(x) for x in items]
+    if len(s) <= max_items:
+        return "[" + ", ".join(s) + "]"
+    return "[" + ", ".join(
+        s[:max_items]) + f", ... (+{len(s) - max_items} more)]"
+
+
+def make_layer_figure(
+    nodes,
+    edges,
+    comp_of_node,
+    powered_roots,
+    degree,
+    vsrc_nodes,
+    isrc_nodes,
+    vsrc_edge_ids_by_node,
+    isrc_edge_ids_by_node,
+    layer: str,
+    net: str,
+    only_isolated: bool = False,
+    focus_component_root: str | None = None,
+    show_background: bool = True,
+):
+    # Collect nodes on this layer/net
     layer_nodes = {
         nid
         for nid, n in nodes.items()
@@ -164,9 +230,17 @@ def make_layer_figure(nodes,
             continue
         pos[nid] = (float(x), float(y))
 
+    def node_tags_str(nid):
+        tags = []
+        if nid in vsrc_nodes:
+            tags.append("vsrc")
+        if nid in isrc_nodes:
+            tags.append("isrc")
+        return ",".join(tags) if tags else "-"
+
     # Helper to build batched line segments for edges on this layer
     def batched_lines(edge_filter_fn):
-        xs, ys, hover = [], [], []
+        xs, ys = [], []
         for e in edges:
             if not edge_filter_fn(e):
                 continue
@@ -177,7 +251,6 @@ def make_layer_figure(nodes,
             x2, y2 = pos[n2]
             xs += [x1, x2, None]
             ys += [y1, y2, None]
-            hover.append(f"{e.get('type')} {e.get('id')}<br>{n1} ↔ {n2}")
         return xs, ys
 
     fig = go.Figure()
@@ -187,18 +260,18 @@ def make_layer_figure(nodes,
         bg_xs, bg_ys = batched_lines(
             lambda e: e.get("type") == "metal" and e.get("layer") == layer)
         fig.add_trace(
-            go.Scattergl(x=bg_xs,
-                         y=bg_ys,
-                         mode="lines",
-                         line=dict(color="rgba(150,150,150,0.25)", width=1),
-                         name=f"metal (all) {layer}",
-                         hoverinfo="skip",
-                         showlegend=True))
+            go.Scattergl(
+                x=bg_xs,
+                y=bg_ys,
+                mode="lines",
+                line=dict(color="rgba(150,150,150,0.25)", width=1),
+                name=f"metal (all) {layer}",
+                hoverinfo="skip",
+                showlegend=True,
+            ))
 
         # Background nodes
-        bg_node_x = []
-        bg_node_y = []
-        bg_hover = []
+        bg_node_x, bg_node_y, bg_hover = [], [], []
         for nid in layer_nodes:
             if nid not in pos:
                 continue
@@ -206,21 +279,24 @@ def make_layer_figure(nodes,
             n = nodes[nid]
             bg_node_x.append(x)
             bg_node_y.append(y)
+            root = comp_of_node[nid]
             bg_hover.append(
                 f"node {nid}<br>"
                 f"layer={n.get('layer')} net={n.get('net')} net_id={n.get('net_id')}<br>"
-                f"component={comp_of_node[nid]} powered={comp_of_node[nid] in powered_roots}<br>"
-                f"degree={degree.get(nid,0)}")
+                f"component={root} powered={root in powered_roots}<br>"
+                f"degree={degree.get(nid,0)} tags={node_tags_str(nid)}")
 
         fig.add_trace(
-            go.Scattergl(x=bg_node_x,
-                         y=bg_node_y,
-                         mode="markers",
-                         marker=dict(size=3, color="rgba(120,120,120,0.35)"),
-                         name="nodes (all)",
-                         text=bg_hover,
-                         hoverinfo="text",
-                         showlegend=True))
+            go.Scattergl(
+                x=bg_node_x,
+                y=bg_node_y,
+                mode="markers",
+                marker=dict(size=3, color="rgba(120,120,120,0.35)"),
+                name="nodes (all)",
+                text=bg_hover,
+                hoverinfo="text",
+                showlegend=True,
+            ))
 
     # Highlight focus metal edges (subset)
     hl_xs, hl_ys = batched_lines(
@@ -228,19 +304,18 @@ def make_layer_figure(nodes,
                    get("n1") in focus_nodes and e.get("n2") in focus_nodes))
     if hl_xs:
         fig.add_trace(
-            go.Scattergl(x=hl_xs,
-                         y=hl_ys,
-                         mode="lines",
-                         line=dict(color="rgba(220,50,50,0.95)", width=2),
-                         name="metal (focus)",
-                         hoverinfo="skip",
-                         showlegend=True))
+            go.Scattergl(
+                x=hl_xs,
+                y=hl_ys,
+                mode="lines",
+                line=dict(color="rgba(220,50,50,0.95)", width=2),
+                name="metal (focus)",
+                hoverinfo="skip",
+                showlegend=True,
+            ))
 
-    # Highlight focus nodes
-    fx = []
-    fy = []
-    fhover = []
-    fcolor = []
+    # Highlight focus nodes (isolated vs powered component)
+    fx, fy, fhover, fcolor = [], [], [], []
     for nid in focus_nodes:
         if nid not in pos:
             continue
@@ -253,29 +328,26 @@ def make_layer_figure(nodes,
         fhover.append(f"node {nid}<br>"
                       f"layer={n.get('layer')} net={n.get('net')}<br>"
                       f"component={root} isolated={is_isolated}<br>"
-                      f"degree={degree.get(nid,0)}")
+                      f"degree={degree.get(nid,0)} tags={node_tags_str(nid)}")
         fcolor.append(0 if is_isolated else 1)
 
     if fx:
-        # Use a fixed mapping: isolated=red, powered=blue (when not only_isolated)
-        colors = ["rgba(220,50,50,0.95)", "rgba(60,120,255,0.85)"]
+        colors = ["rgba(220,50,50,0.95)",
+                  "rgba(60,120,255,0.85)"]  # isolated, powered
         fig.add_trace(
-            go.Scattergl(x=fx,
-                         y=fy,
-                         mode="markers",
-                         marker=dict(size=6,
-                                     color=[colors[c] for c in fcolor]),
-                         name="nodes (focus)",
-                         text=fhover,
-                         hoverinfo="text",
-                         showlegend=True))
+            go.Scattergl(
+                x=fx,
+                y=fy,
+                mode="markers",
+                marker=dict(size=6, color=[colors[c] for c in fcolor]),
+                name="nodes (focus)",
+                text=fhover,
+                hoverinfo="text",
+                showlegend=True,
+            ))
 
     # Via endpoints touching this layer
-    via_x = []
-    via_y = []
-    via_hover = []
-    via_symbol = []
-
+    via_x, via_y, via_hover, via_symbol = [], [], [], []
     for e in edges:
         if e.get("type") != "via":
             continue
@@ -284,6 +356,7 @@ def make_layer_figure(nodes,
             continue
         l1 = nodes[n1].get("layer")
         l2 = nodes[n2].get("layer")
+
         # If either endpoint is on this layer, draw marker at that endpoint (only)
         if l1 == layer and n1 in pos:
             other_layer = l2
@@ -295,6 +368,7 @@ def make_layer_figure(nodes,
             via_y.append(y)
             via_symbol.append(sym)
             via_hover.append(f"via {e.get('id')}<br>{n1}@{l1} ↔ {n2}@{l2}")
+
         if l2 == layer and n2 in pos:
             other_layer = l1
             r_this = layer_rank(layer)
@@ -308,18 +382,112 @@ def make_layer_figure(nodes,
 
     if via_x:
         fig.add_trace(
-            go.Scattergl(x=via_x,
-                         y=via_y,
-                         mode="markers",
-                         marker=dict(size=9,
-                                     color="rgba(0,160,255,0.95)",
-                                     symbol=via_symbol,
-                                     line=dict(width=1,
-                                               color="rgba(0,0,0,0.4)")),
-                         name="vias (endpoints)",
-                         text=via_hover,
-                         hoverinfo="text",
-                         showlegend=True))
+            go.Scattergl(
+                x=via_x,
+                y=via_y,
+                mode="markers",
+                marker=dict(
+                    size=9,
+                    color="rgba(0,160,255,0.95)",
+                    symbol=via_symbol,
+                    line=dict(width=1, color="rgba(0,0,0,0.4)"),
+                ),
+                name="vias (endpoints)",
+                text=via_hover,
+                hoverinfo="text",
+                showlegend=True,
+            ))
+
+    # --- NEW: emphasize nodes connected to vsrc/isrc ---
+    VSRC_STYLE = dict(
+        size=16,
+        symbol="circle-open",
+        color="rgba(180,0,255,0.95)",
+        line=dict(width=3, color="rgba(180,0,255,0.95)"),
+    )
+    ISRC_STYLE = dict(
+        size=16,
+        symbol="square-open",
+        color="rgba(255,140,0,0.95)",
+        line=dict(width=3, color="rgba(255,140,0,0.95)"),
+    )
+    BOTH_STYLE = dict(
+        size=18,
+        symbol="diamond-open",
+        color="rgba(0,0,0,0.95)",
+        line=dict(width=3, color="rgba(0,0,0,0.95)"),
+    )
+
+    vsrc_on_layer = (layer_nodes & vsrc_nodes) - isrc_nodes
+    isrc_on_layer = (layer_nodes & isrc_nodes) - vsrc_nodes
+    both_on_layer = layer_nodes & vsrc_nodes & isrc_nodes
+
+    def build_tag_trace(nids, label):
+        xs, ys, hovers = [], [], []
+        for nid in nids:
+            if nid not in pos:
+                continue
+            x, y = pos[nid]
+            n = nodes[nid]
+            root = comp_of_node[nid]
+            v_ids = _short_list(vsrc_edge_ids_by_node.get(nid, []))
+            i_ids = _short_list(isrc_edge_ids_by_node.get(nid, []))
+            xs.append(x)
+            ys.append(y)
+            hovers.append(
+                f"{label} node {nid}<br>"
+                f"layer={n.get('layer')} net={n.get('net')}<br>"
+                f"vsrc_edges={v_ids}<br>"
+                f"isrc_edges={i_ids}<br>"
+                f"component={root} powered={root in powered_roots}<br>"
+                f"degree={degree.get(nid,0)}")
+        return xs, ys, hovers
+
+    # Add in a stable order so legend is predictable
+    if vsrc_on_layer:
+        xs, ys, hovers = build_tag_trace(vsrc_on_layer, "VSRC-connected")
+        if xs:
+            fig.add_trace(
+                go.Scattergl(
+                    x=xs,
+                    y=ys,
+                    mode="markers",
+                    marker=VSRC_STYLE,
+                    name="nodes w/ vsrc",
+                    text=hovers,
+                    hoverinfo="text",
+                    showlegend=True,
+                ))
+
+    if isrc_on_layer:
+        xs, ys, hovers = build_tag_trace(isrc_on_layer, "ISRC-connected")
+        if xs:
+            fig.add_trace(
+                go.Scattergl(
+                    x=xs,
+                    y=ys,
+                    mode="markers",
+                    marker=ISRC_STYLE,
+                    name="nodes w/ isrc",
+                    text=hovers,
+                    hoverinfo="text",
+                    showlegend=True,
+                ))
+
+    if both_on_layer:
+        xs, ys, hovers = build_tag_trace(both_on_layer, "VSRC+ISRC-connected")
+        if xs:
+            fig.add_trace(
+                go.Scattergl(
+                    x=xs,
+                    y=ys,
+                    mode="markers",
+                    marker=BOTH_STYLE,
+                    name="nodes w/ vsrc+isrc",
+                    text=hovers,
+                    hoverinfo="text",
+                    showlegend=True,
+                ))
 
     # Open circuits (degree 0) on this layer
     open_x, open_y, open_hover = [], [], []
@@ -332,27 +500,28 @@ def make_layer_figure(nodes,
         open_x.append(x)
         open_y.append(y)
         open_hover.append(
-            f"OPEN node {nid}<br>layer={layer} net={nodes[nid].get('net')}")
+            f"OPEN node {nid}<br>layer={layer} net={nodes[nid].get('net')} tags={node_tags_str(nid)}"
+        )
 
     if open_x:
         fig.add_trace(
-            go.Scattergl(x=open_x,
-                         y=open_y,
-                         mode="markers",
-                         marker=dict(size=14,
-                                     color="rgba(255,0,0,0.95)",
-                                     symbol="x"),
-                         name="open-circuit nodes (degree=0)",
-                         text=open_hover,
-                         hoverinfo="text",
-                         showlegend=True))
+            go.Scattergl(
+                x=open_x,
+                y=open_y,
+                mode="markers",
+                marker=dict(size=14, color="rgba(255,0,0,0.95)", symbol="x"),
+                name="open-circuit nodes (degree=0)",
+                text=open_hover,
+                hoverinfo="text",
+                showlegend=True,
+            ))
 
     # Layout tweaks
     fig.update_layout(
-        title=f"PDN connectivity — layer {layer}" +
-        (" (isolated only)" if only_isolated else "") +
-        (f" (focus component {focus_component_root})"
-         if focus_component_root else ""),
+        title=(f"PDN connectivity — layer {layer}" +
+               (" (isolated only)" if only_isolated else "") +
+               (f" (focus component {focus_component_root})"
+                if focus_component_root else "")),
         template="plotly_white",
         legend=dict(orientation="h"),
         margin=dict(l=10, r=10, t=50, b=10),
@@ -378,62 +547,88 @@ def main(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("json", help="JSON exported from C++")
     ap.add_argument("--layer", required=True, help="Layer name, e.g. M4")
-    ap.add_argument("--net", required=True, help="Net name, e.g. VSS")
+    ap.add_argument("--net", required=True, help="Net name, e.g. VDD")
     ap.add_argument("--out", default=None, help="Output HTML path")
     ap.add_argument(
         "--only-isolated",
         action="store_true",
-        help="Show only isolated components (plus vias on that layer)")
+        help="Show only isolated components (plus vias on that layer)",
+    )
     ap.add_argument(
         "--focus-component",
         default=None,
-        help="Component root id to focus (printed by --list-components)")
-    ap.add_argument("--no-background",
-                    action="store_true",
-                    help="Do not draw faint full-network background")
-    ap.add_argument("--list-components",
-                    action="store_true",
-                    help="Print components summary and exit")
+        help="Component root id to focus (printed by --list-components)",
+    )
+    ap.add_argument(
+        "--no-background",
+        action="store_true",
+        help="Do not draw faint full-network background",
+    )
+    ap.add_argument(
+        "--list-components",
+        action="store_true",
+        help="Print components summary and exit",
+    )
     args = ap.parse_args(argv)
 
     nodes, edges, _tick_to_um = load_json(args.json)
-    comp_of_node, components, powered_roots, degree = compute_connectivity(
-        nodes, edges)
+    (
+        comp_of_node,
+        components,
+        powered_roots,
+        degree,
+        vsrc_nodes,
+        isrc_nodes,
+        vsrc_edge_ids_by_node,
+        isrc_edge_ids_by_node,
+    ) = compute_connectivity(nodes, edges)
 
     if args.list_components:
         rows = component_summary(nodes, components, powered_roots)
         print(
             "component_root  nodes  powered  layers  bbox(minx,miny,maxx,maxy)"
         )
-        for r in rows[:200]:  # print top 200 by size
+        for r in rows[:200]:
             print(
-                f"{r['root']}  {r['nodes']}  {int(r['powered'])}  {','.join(r['layers'])}  {r['bbox']}"
+                f"{r['root']}  {r['nodes']}  {int(r['powered'])}  {','.join([x for x in r['layers'] if x])}  {r['bbox']}"
             )
         return
 
     out = args.out
     if out is None:
         suffix = "isolated" if args.only_isolated else "all"
-        out = f"pdn_{args.layer}_{args.net}_{suffix}.html"
+        out = f"pdn_{args.layer}_{suffix}.html"
 
-    fig = make_layer_figure(nodes,
-                            edges,
-                            comp_of_node,
-                            powered_roots,
-                            degree,
-                            layer=args.layer,
-                            net=args.net,
-                            only_isolated=args.only_isolated,
-                            focus_component_root=args.focus_component,
-                            show_background=not args.no_background)
+    fig = make_layer_figure(
+        nodes,
+        edges,
+        comp_of_node,
+        powered_roots,
+        degree,
+        vsrc_nodes,
+        isrc_nodes,
+        vsrc_edge_ids_by_node,
+        isrc_edge_ids_by_node,
+        layer=args.layer,
+        net=args.net,
+        only_isolated=args.only_isolated,
+        focus_component_root=args.focus_component,
+        show_background=not args.no_background,
+    )
+
     # fig.write_html(out, include_plotlyjs="cdn")
-    # print(f"Wrote {out}")
     fig.show()
+    # print(f"Wrote {out}")
 
 
 if __name__ == "__main__":
     # main()
     main([
-        "viz_output/viz.json", "--layer", "met3", "--net", "VSS", "--out",
-        "met3_VSS_all.html"
+        "../viz_output/viz.json",
+        "--layer",
+        "met4",
+        "--net",
+        "VDD",
+        "--out",
+        "met3_VSS_all.png",
     ])
