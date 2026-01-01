@@ -1,14 +1,15 @@
-#include <filesystem>
 #include <iostream>
-#include <unordered_set>
 
 #include "pdnsol/io/exporter_viz.hpp"
 #include "pdnsol/io/parser_def.hpp"
 #include "pdnsol/sanitizer/sanitizer_circuit.hpp"
 #include "pdnsol/sanitizer/sanitizer_config.hpp"
 #include "pdnsol/solver/mna.hpp"
+#include "pdnsol/solver/solver_basic.hpp"
 #include "pdnsol/struct/circuit_decorator.hpp"
 #include "pdnsol/utils/logging.hpp"
+#include "pdnsol/utils/perf_stats.hpp"
+#include "pdnsol/viz/heatmap.hpp"
 
 using namespace pdnsol;
 
@@ -127,7 +128,8 @@ int main(int argc, char** argv) {
         perLayerGridRes[layerName] = LayerGridResolution{strideX, strideY};
     }
 
-    CoarsePdnBuilder3D builder(techDb, defaultGridRes,
+    CoarsePdnBuilder3D builder(techDb,
+                               defaultGridRes,
                                perLayerGridRes,
                                powerNets,
                                groundNets,
@@ -145,8 +147,7 @@ int main(int argc, char** argv) {
 
     CircuitGraph circ;
     if (!builder.buildCoarsePdnFromDef(defPath, circ)) {
-        std::cerr << "Failed to build 3D coarse PDN graph.\n";
-        return 1;
+        PDN_FATAL("Failed to build 3D coarse PDN graph.");
     }
     circ.purgeParallelElements();
     circ.purgeIsolatedNodes();
@@ -159,15 +160,25 @@ int main(int argc, char** argv) {
     CircuitDecorator decorator(circ, decoratorConfig);
     decorator.build();
 
-    std::cout << "3D Coarse PDN graph built.\n";
-    std::cout << "Nodes:      " << circ.mNodes.size() << "\n";
-    std::cout << "MetalRes:   " << circ.mMetalResistors.size() << "\n";
-    std::cout << "ViaRes:     " << circ.mViaResistors.size() << "\n";
-    std::cout << "PkgRes:     " << circ.mPkgResistors.size() << "\n";
+    PDN_INFO("3D Coarse PDN graph built.");
+    PDN_INFO("Nodes:      %d", circ.mNodes.size());
+    PDN_INFO("MetalRes:   %d", circ.mMetalResistors.size());
+    PDN_INFO("ViaRes:     %d", circ.mViaResistors.size());
+    PDN_INFO("PkgRes:     %d", circ.mPkgResistors.size());
 
-    std::cout << "Current/Voltage sources embedded\n";
-    std::cout << "Current sources:      " << circ.mIsrcs.size() << "\n";
-    std::cout << "Voltage sources:      " << circ.mVsrcs.size() << "\n";
+    PDN_INFO("Current/Voltage sources embedded");
+    PDN_INFO("Current sources:      %d", circ.mIsrcs.size());
+    PDN_INFO("Voltage sources:      %d", circ.mVsrcs.size());
+
+    // Create checker instance
+    CircuitConnectivityChecker checker;
+    // Option 1: Get comprehensive diagnostic
+    auto                       diagnostic    = checker.checkIsolation(circ);
+    // Option 2: Get just isolated nodes
+    auto                       isolatedNodes = checker.findIsolatedNodes(circ);
+    // Option 3: Generate full report
+    std::string                report        = checker.generateReport(circ);
+    std::cout << report;
 
     // Next steps:
     //   - Build sparse conductance matrix G from mMetalResistors +
@@ -177,20 +188,26 @@ int main(int argc, char** argv) {
     //   - Solve G V = I (e.g., with CG/PCG) and extract coarse IR-drop
     //   heatmap.
 
-    // Create checker instance
-    CircuitConnectivityChecker checker;
-
-    // Option 1: Get comprehensive diagnostic
-    auto diagnostic = checker.checkIsolation(circ);
-
-    // Option 2: Get just isolated nodes
-    auto isolatedNodes = checker.findIsolatedNodes(circ);
-
-    // Option 3: Generate full report
-    std::string report = checker.generateReport(circ);
-    std::cout << report;
-
-    exportCircuitGraphForVizJson(circ, "viz_output/viz.json");
+    {
+        PERF_STATS("Solving coarse circuit");
+        PDN_INFO("Starting solving coarse circuit with %'d nodes",
+                 circ.mNodes.size());
+        // 1. Stamp the MNA system
+        MNASystem           mna = assembleMNA(circ);
+        // 2. Solve the MNA system
+        MNASolution         sol = solveMNA(mna);
+        // 3. Build heatmap for the chosen net(s)
+        IRDropHeatmapConfig heatmapCfg;
+        heatmapCfg.vddNominal = 0.8;
+        heatmapCfg.vssNominal = 0.0;
+        heatmapCfg.width      = 32;
+        heatmapCfg.height     = 32;
+        HeatmapByNet hm = buildIRDropHeatmapsMultiNet(circ, sol, heatmapCfg);
+        // 4. Export
+        writeAllHeatmapsToPng(hm, "work_coarse", /*useMaxValue=*/true);
+        // 5. (Optional) Export a model layout plot
+        exportCircuitGraphForVizJson(circ, "viz_output/viz.json");
+    }
 
     return 0;
 }

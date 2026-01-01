@@ -45,9 +45,11 @@
 #include <unordered_map>
 #include <vector>
 
+#include "pdnsol/utils/id_string.hpp"
+
 namespace pdnsol {
 
-// Forward declarations to avoid pulling large headers into users of this API.
+// Forward declarations to avoid pulling large headers into users of this API
 class CircuitGraph;
 class MNASolution;
 
@@ -57,17 +59,17 @@ class MNASolution;
 
 struct IRDropHeatmapConfig {
     // Output resolution (same for all nets).
-    int width = 32;
+    int width  = 32;
     int height = 32;
 
-    // Bounding box in layout coordinates (meters).
+    // Bounding box in layout coordinates (meters)
     // If useCustomBBox == false, the bounding box is inferred
-    // from all nodes in CircuitGraph.
-    bool useCustomBBox = false;
-    double minX = 0.0;
-    double minY = 0.0;
-    double maxX = 0.0;
-    double maxY = 0.0;
+    // from all nodes in CircuitGraph
+    bool   useCustomBBox = false;
+    double minX          = 0.0;
+    double minY          = 0.0;
+    double maxX          = 0.0;
+    double maxY          = 0.0;
 
     // Metric to visualize.
     //   IR_DROP:
@@ -75,11 +77,11 @@ struct IRDropHeatmapConfig {
     //       For VSS nets:  Vnode - vssNominal  (bounce > 0 means worse)
     //
     //   RAW_VOLTAGE:
-    //       Visualize the raw node voltage Vnode.
+    //       Visualize the raw node voltage Vnode
     enum class Metric { IR_DROP, RAW_VOLTAGE };
     Metric metric = Metric::IR_DROP;
 
-    // Nominal voltages for VDD and VSS (for IR_DROP metric).
+    // Nominal voltages for VDD and VSS (for IR_DROP metric)
     double vddNominal = 1.0; // e.g. 1.0 V
     double vssNominal = 0.0; // e.g. 0.0 V
 
@@ -88,17 +90,16 @@ struct IRDropHeatmapConfig {
     bool includeVss = true; // nets with netId % 2 == 1
 
     // Optional filter: layer indices to include.
-    // If empty, all layers are included.
-    // Layer index is decoded as: layer = netId / 2.
-    std::vector<int32_t> includedLayers;
+    // If empty, all layers are included
+    std::vector<IdString> includedLayers;
 };
 
 // Per-pixel aggregated data.
 struct IRDropCell {
-    float minVal;   // minimum metric in this cell
-    float maxVal;   // maximum metric in this cell
-    double sumVal;  // sum of metric values (for averaging)
-    uint32_t count; // how many samples fell into this cell
+    float    minVal; // minimum metric in this cell
+    float    maxVal; // maximum metric in this cell
+    double   sumVal; // sum of metric values (for averaging)
+    uint32_t count;  // how many samples fell into this cell
 
     IRDropCell()
         : minVal(std::numeric_limits<float>::infinity())
@@ -107,9 +108,9 @@ struct IRDropCell {
         , count(0) {}
 };
 
-// Single heatmap: 2D grid over a rectangular region.
+// Single heatmap: 2D grid over a rectangular region
 struct IRDropHeatmap {
-    int width = 0;
+    int width  = 0;
     int height = 0;
 
     double minX = 0.0;
@@ -133,7 +134,7 @@ struct IRDropHeatmap {
 };
 
 // One heatmap per netId (layer-(VDD/VSS) combination).
-using HeatmapByNet = std::unordered_map<int32_t, IRDropHeatmap>;
+using HeatmapByNet = std::unordered_map<int, IRDropHeatmap>;
 
 // Layout bounding box (meters).
 struct LayoutBBox {
@@ -143,19 +144,19 @@ struct LayoutBBox {
     double maxY;
 };
 
-// Decode netId into (layerIndex, isVdd).
+// Decode netId into (layerIndex, isVdd)
 struct NetDecomposition {
     int32_t layer; // netId / 2
-    bool isVdd;    // true if netId % 2 == 0
+    bool    isVdd; // true if netId % 2 == 0
 };
 
 // -------------------------
 // Helpers for geometry & net decoding
 // -------------------------
 
-// Compute a global bounding box over all nodes in the circuit.
+// Compute a global bounding box over all nodes in the circuit
 LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
-                                    bool skipGndNode = true);
+                                    bool                skipGndNode = true);
 
 // Decode netId into (layerIndex, isVdd).
 inline NetDecomposition decodeNetId(int32_t netId) {
@@ -165,10 +166,10 @@ inline NetDecomposition decodeNetId(int32_t netId) {
     return d;
 }
 
-// Make a human-readable label for file naming, e.g. "M3_VDD".
+// Make a human-readable label for file naming, e.g. "M3_VDD"
 std::string makeNetLabel(int32_t netId);
 
-// Compute the IR-drop-related metric for a node voltage.
+// Compute the IR-drop-related metric for a node voltage
 inline double computeMetric(double Vnode, bool isVdd,
                             const IRDropHeatmapConfig& cfg) {
     if (cfg.metric == IRDropHeatmapConfig::Metric::RAW_VOLTAGE) {
@@ -176,8 +177,8 @@ inline double computeMetric(double Vnode, bool isVdd,
     }
 
     // IR_DROP:
-    //   For VDD: drop = vddNominal - Vnode  (positive = worse IR drop).
-    //   For VSS: bounce = Vnode - vssNominal (positive = worse ground bounce).
+    //   For VDD: drop = vddNominal - Vnode  (positive = worse IR drop)
+    //   For VSS: bounce = Vnode - vssNominal (positive = worse ground bounce)
     if (isVdd) {
         return cfg.vddNominal - Vnode;
     } else {
@@ -188,8 +189,8 @@ inline double computeMetric(double Vnode, bool isVdd,
 // Build an empty IRDropHeatmap object for a given bounding box and resolution.
 inline IRDropHeatmap makeEmptyHeatmap(const LayoutBBox& bbox, int width,
                                       int height) {
-    return IRDropHeatmap(width, height, bbox.minX, bbox.minY, bbox.maxX,
-                         bbox.maxY);
+    return IRDropHeatmap(
+      width, height, bbox.minX, bbox.minY, bbox.maxX, bbox.maxY);
 }
 
 // -------------------------
@@ -200,9 +201,9 @@ inline IRDropHeatmap makeEmptyHeatmap(const LayoutBBox& bbox, int width,
 //
 // Returns: map from netId -> IRDropHeatmap.
 // Each heatmap covers the same bounding box.
-HeatmapByNet
-buildIRDropHeatmapsMultiNet(const CircuitGraph& circ, const MNASolution& sol,
-                            const IRDropHeatmapConfig& cfg);
+HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
+                                         const MNASolution&         sol,
+                                         const IRDropHeatmapConfig& cfg);
 
 // -------------------------
 // Scalar extraction & colormap
@@ -211,8 +212,7 @@ buildIRDropHeatmapsMultiNet(const CircuitGraph& circ, const MNASolution& sol,
 // Extract one scalar per pixel from a heatmap.
 // If useMaxValue == true, use maximum metric in each cell;
 // otherwise, use average (sum/count).
-void extractScalarImage(const IRDropHeatmap& hm,
-                        std::vector<float>& out,
+void extractScalarImage(const IRDropHeatmap& hm, std::vector<float>& out,
                         bool useMaxValue);
 
 // Simple RGB struct for image output.
@@ -231,29 +231,26 @@ RGB applyColormap(float v, float vmin, float vmax);
 // -------------------------
 
 // Write a single heatmap to a PNG image file using stb_image_write.
-void writeHeatmapToPng(const IRDropHeatmap& hm,
-                       const std::string& filename,
+void writeHeatmapToPng(const IRDropHeatmap& hm, const std::string& filename,
                        bool useMaxValue);
 
 // Write all heatmaps (one per netId) to PNG files in the given directory.
 // Files are named as "<outputDir>/<netLabel>.png", e.g. "M3_VDD.png".
 void writeAllHeatmapsToPng(const HeatmapByNet& heatmaps,
-                           const std::string& outputDir,
-                           bool useMaxValue);
+                           const std::string& outputDir, bool useMaxValue);
 
 // -------------------------
 // Legacy PPM-named wrappers (still output PNG)
 // -------------------------
 
 inline void writeHeatmapToPpm(const IRDropHeatmap& hm,
-                              const std::string& filename,
-                              bool useMaxValue) {
+                              const std::string& filename, bool useMaxValue) {
     writeHeatmapToPng(hm, filename, useMaxValue);
 }
 
 inline void writeAllHeatmapsToPpm(const HeatmapByNet& heatmaps,
-                                  const std::string& outputDir,
-                                  bool useMaxValue) {
+                                  const std::string&  outputDir,
+                                  bool                useMaxValue) {
     writeAllHeatmapsToPng(heatmaps, outputDir, useMaxValue);
 }
 

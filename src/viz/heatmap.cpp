@@ -12,7 +12,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 // stb_image_write is a single-header library.
@@ -120,7 +119,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
     }
 
     // Layer filter (optional).
-    std::unordered_set<int32_t> layerFilter;
+    IdString::Set<IdString> layerFilter;
     if (!cfg.includedLayers.empty()) {
         layerFilter.insert(cfg.includedLayers.begin(),
                            cfg.includedLayers.end());
@@ -147,15 +146,14 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
             continue;
         }
         const Node& node = itNode->second;
+        const NetId& netId = node.mNet;
 
-        int32_t netId = node.mNet.get();
-        if (netId < 0) {
+        if (!netId) {
             // Ignore invalid netId if any.
             continue;
         }
-
-        NetDecomposition nd    = decodeNetId(netId);
-        bool             isVdd = nd.isVdd;
+        const NetKey& netKey = circ.netKey(node.mNet);
+        const bool isVdd = netKey.isPower;
 
         // Apply filters: VDD/VSS
         if (isVdd && !cfg.includeVdd) continue;
@@ -163,7 +161,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
 
         // Apply layer filter (if any).
         if (!layerFilter.empty() &&
-            layerFilter.find(nd.layer) == layerFilter.end()) {
+            layerFilter.find(netKey.layer) == layerFilter.end()) {
             continue;
         }
 
@@ -188,10 +186,10 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
         float  fVal   = static_cast<float>(metric);
 
         // 3. Get or create heatmap for this netId.
-        auto itHm = heatmaps.find(netId);
+        auto itHm = heatmaps.find(netId.get());
         if (itHm == heatmaps.end()) {
             IRDropHeatmap hm  = makeEmptyHeatmap(bbox, cfg.width, cfg.height);
-            auto          res = heatmaps.emplace(netId, std::move(hm));
+            auto          res = heatmaps.emplace(netId.get(), std::move(hm));
             itHm              = res.first;
         }
 
