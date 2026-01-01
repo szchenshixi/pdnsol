@@ -158,14 +158,13 @@ struct TileNodeIdGrid {
 // -----------------------------------------------------------------------------
 
 CoarsePdnBuilder3D::CoarsePdnBuilder3D(
-  TechDatabase& techDb, int defaultGridNx, int defaultGridNy,
+  TechDatabase& techDb, LayerGridResolution defaultRes,
   const IdString::Map<LayerGridResolution>& perLayerRes,
   const std::vector<std::string>&           powerNetNames,
   const std::vector<std::string>&           groundNetNames,
   const std::vector<std::string>&           layerOrder)
     : mTechDb(techDb)
-    , mDefaultGridNx(defaultGridNx)
-    , mDefaultGridNy(defaultGridNy) {
+    , mDefaultRes(defaultRes) {
 
     // 1) Register PDN nets
     for (const std::string& n : powerNetNames) {
@@ -194,13 +193,11 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
         if (it != perLayerRes.end()) {
             mLayerGridRes[l] = it->second;
         } else {
-            mLayerGridRes[l] =
-              LayerGridResolution{mDefaultGridNx, mDefaultGridNy};
+            mLayerGridRes[l] = mDefaultRes;
         }
 
-        if (mLayerGridRes[l].nx <= 0 || mLayerGridRes[l].ny <= 0) {
-            throw std::runtime_error("Invalid grid resolution for layer " +
-                                     lname.str());
+        if (mLayerGridRes[l].sx <= 0 || mLayerGridRes[l].sy <= 0) {
+            PDN_FATAL("Invalid grid stride for layer %s", lname.c_str());
         }
     }
 }
@@ -311,10 +308,171 @@ bool CoarsePdnBuilder3D::parseDefGeometry(const std::string& defPath) {
 // Initialize in-plane grids for each (net, layer)
 // -----------------------------------------------------------------------------
 
+static int gcd(int a, int b) {
+    while (b) {
+        int t = b;
+        b     = a % b;
+        a     = t;
+    }
+    return a;
+}
+
+static int lcm(int a, int b) { return (a / gcd(a, b)) * b; }
+
 void CoarsePdnBuilder3D::initInPlaneGrids() {
-    mInPlaneGrids.assign(
-      mNumNets,
-      std::vector<ConductanceGrid2D>(static_cast<std::size_t>(mNumLayers)));
+    mInPlaneGrids.assign(mNumNets, std::vector<ConductanceGrid2D>(mNumLayers));
+
+    // Calculate die dimensions once
+    double dieWidth  = mDieXMaxUm - mDieXMinUm;
+    double dieHeight = mDieYMaxUm - mDieYMinUm;
+
+    // Step 1: Check if all tile sizes are integer multiples of a common
+    // divisor
+    int commonDivisorX = 0;
+    int commonDivisorY = 0;
+
+    for (int l = 0; l < mNumLayers; ++l) {
+        if (l == 0) {
+            commonDivisorX = mLayerGridRes[l].sx;
+            commonDivisorY = mLayerGridRes[l].sy;
+        } else {
+            commonDivisorX = gcd(commonDivisorX, mLayerGridRes[l].sx);
+            commonDivisorY = gcd(commonDivisorY, mLayerGridRes[l].sy);
+        }
+    }
+
+    if (commonDivisorX <= 0 || commonDivisorY <= 0) {
+        PDN_FATAL("Invalid tile sizes found (non-positive values)");
+    }
+
+    // Verify all tile sizes are integer multiples of the common divisors
+    for (int l = 0; l < mNumLayers; ++l) {
+        if (mLayerGridRes[l].sx % commonDivisorX != 0) {
+            PDN_FATAL("Tile size sx=%d is not an integer multiple of common "
+                      "divisor %d",
+                      mLayerGridRes[l].sx,
+                      commonDivisorX);
+        }
+        if (mLayerGridRes[l].sy % commonDivisorY != 0) {
+            PDN_FATAL("Tile size sx=%d is not an integer multiple of common "
+                      "divisor %d",
+                      mLayerGridRes[l].sy,
+                      commonDivisorY);
+        }
+    }
+
+    // Step 2: Find the least common multiple of tile size ratios
+    // This ensures all tile counts will be integer multiples
+    int lcmX = 1;
+    int lcmY = 1;
+
+    for (int l = 0; l < mNumLayers; ++l) {
+        int ratioX = mLayerGridRes[l].sx / commonDivisorX;
+        int ratioY = mLayerGridRes[l].sy / commonDivisorY;
+
+        lcmX = lcm(lcmX, ratioX);
+        lcmY = lcm(lcmY, ratioY);
+    }
+
+    // Step 3: Calculate base grid dimensions using the common divisor
+    // This is the finest grid that can accommodate all tile sizes
+    double baseTileSizeX = commonDivisorX;
+    double baseTileSizeY = commonDivisorY;
+
+    // Calculate required number of base tiles to cover the die
+    int baseNx = static_cast<int>(std::ceil(dieWidth / baseTileSizeX));
+    int baseNy = static_cast<int>(std::ceil(dieHeight / baseTileSizeY));
+
+    // Adjust base grid to be a multiple of LCM to ensure integer tile counts
+    baseNx = ((baseNx + lcmX - 1) / lcmX) * lcmX;
+    baseNy = ((baseNy + lcmY - 1) / lcmY) * lcmY;
+
+    // Step 4: Compute nx/ny for each layer and check/correct for integer
+    // multiples
+    for (int l = 0; l < mNumLayers; ++l) {
+        int ratioX = mLayerGridRes[l].sx / commonDivisorX;
+        int ratioY = mLayerGridRes[l].sy / commonDivisorY;
+
+        // Calculate initial tile counts
+        int nx = baseNx / ratioX;
+        int ny = baseNy / ratioY;
+
+        // Verify these are integer multiples (should be due to LCM adjustment)
+        if (baseNx % ratioX != 0 || baseNy % ratioY != 0) {
+            // This should not happen if LCM was calculated correctly
+            // But if it does, adjust by padding
+            if (baseNx % ratioX != 0) {
+                // Need to increase baseNx to make it divisible by ratioX
+                int requiredBaseNx = ((baseNx / ratioX) + 1) * ratioX;
+                baseNx             = requiredBaseNx;
+                nx                 = baseNx / ratioX;
+
+                // Recalculate all previous layers
+                for (int prev = 0; prev < l; ++prev) {
+                    int prevRatioX = mLayerGridRes[prev].sx / commonDivisorX;
+                    mLayerGridRes[prev].nx = baseNx / prevRatioX;
+                }
+            }
+
+            if (baseNy % ratioY != 0) {
+                // Need to increase baseNy to make it divisible by ratioY
+                int requiredBaseNy = ((baseNy / ratioY) + 1) * ratioY;
+                baseNy             = requiredBaseNy;
+                ny                 = baseNy / ratioY;
+
+                // Recalculate all previous layers
+                for (int prev = 0; prev < l; ++prev) {
+                    int prevRatioY = mLayerGridRes[prev].sy / commonDivisorY;
+                    mLayerGridRes[prev].ny = baseNy / prevRatioY;
+                }
+            }
+        }
+
+        // Ensure at least 1 tile
+        mLayerGridRes[l].nx = std::max(1, nx);
+        mLayerGridRes[l].ny = std::max(1, ny);
+
+        // Double-check integer multiple relationship
+        if (mLayerGridRes[l].nx * ratioX != baseNx) {
+            // Adjust by increasing nx (adding padding)
+            mLayerGridRes[l].nx = (baseNx + ratioX - 1) / ratioX;
+        }
+        if (mLayerGridRes[l].ny * ratioY != baseNy) {
+            // Adjust by increasing ny (adding padding)
+            mLayerGridRes[l].ny = (baseNy + ratioY - 1) / ratioY;
+        }
+    }
+
+    // Optional: Verify all layers align properly
+    for (int l = 0; l < mNumLayers; ++l) {
+        int ratioX = mLayerGridRes[l].sx / commonDivisorX;
+        int ratioY = mLayerGridRes[l].sy / commonDivisorY;
+
+        if (mLayerGridRes[l].nx * ratioX != baseNx) {
+            PDN_ERROR("Warning: Layer %d X-dimension not properly aligned. "
+                      "Expected baseNx=%d, got %d",
+                      l,
+                      baseNx,
+                      mLayerGridRes[l].nx * ratioX);
+        }
+        if (mLayerGridRes[l].ny * ratioY != baseNy) {
+            PDN_ERROR("Warning: Layer %d X-dimension not properly aligned. "
+                      "Expected baseNx=%d, got %d",
+                      l,
+                      baseNy,
+                      mLayerGridRes[l].ny * ratioY);
+        }
+    }
+
+    // Calculate the actual padded die dimensions
+    double paddedDieWidth  = baseNx * baseTileSizeX;
+    double paddedDieHeight = baseNy * baseTileSizeY;
+
+    PDN_INFO("Grid Configuration:");
+    PDN_INFO("  Base tile:    %.2f x %.2fum", baseTileSizeX, baseTileSizeY);
+    PDN_INFO("  Base grid:    %d x %d tiles", baseNx, baseNx);
+    PDN_INFO("  Original die: %.2f x %.2fum", dieWidth, dieHeight);
+    PDN_INFO("  Padded die:   %.2f x %.2fum", paddedDieWidth, paddedDieHeight);
 
     for (int n = 0; n < mNumNets; ++n) {
         for (int l = 0; l < mNumLayers; ++l) {
@@ -1118,10 +1276,12 @@ void CoarsePdnBuilder3D::accumulateHorizontalStripe(ConductanceGrid2D& grid,
     const double dy = grid.dy;
 
     // Rows [jStart..jEnd] where band intersects [y0,y1]
-    int jStart =
-      clamp(static_cast<int>(std::floor((y0 - grid.yMin) / dy)), 0, ny - 1);
-    int jEnd =
-      clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 0, ny - 1);
+    // int jStart =
+    //   clamp(static_cast<int>(std::floor((y0 - grid.yMin) / dy)), 0, ny - 1);
+    // int jEnd =
+    //   clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 0, ny - 1);
+    // Representative row
+    int iy = representativeRow(grid, y0, y1);
 
     // Vertical boundaries [kStart..kEnd] where xMin + k*dx in [x0,x1], 1
     // <= k <= nx-1
@@ -1130,17 +1290,18 @@ void CoarsePdnBuilder3D::accumulateHorizontalStripe(ConductanceGrid2D& grid,
     int kEnd =
       clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 1, nx - 1);
 
-    if (jEnd < jStart || kEnd < kStart) return;
+    // if (jEnd < jStart || kEnd < kStart) return;
+    if (kEnd < kStart) return;
 
     double segmentLength = dx;
     double G_perSegment  = 1.0 / (RL * segmentLength); // Siemens
 
-    for (int j = jStart; j <= jEnd; ++j) {
-        for (int k = kStart; k <= kEnd; ++k) {
-            int ix = k - 1;
-            grid.gx(ix, j) += G_perSegment;
-        }
+    // for (int j = jStart; j <= jEnd; ++j) {
+    for (int k = kStart; k <= kEnd; ++k) {
+        int ix = k - 1;
+        grid.gx(ix, iy) += G_perSegment;
     }
+    // }
 }
 
 void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
@@ -1159,10 +1320,11 @@ void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
     const double dy = grid.dy;
 
     // Columns [iStart..iEnd]
-    int iStart =
-      clamp(static_cast<int>(std::floor((x0 - grid.xMin) / dx)), 0, nx - 1);
-    int iEnd =
-      clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 0, nx - 1);
+    // int iStart =
+    //   clamp(static_cast<int>(std::floor((x0 - grid.xMin) / dx)), 0, nx - 1);
+    // int iEnd =
+    //   clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 0, nx - 1);
+    int ix = representativeRow(grid, x0, x1);
 
     // Horizontal boundaries [lStart..lEnd], 1 <= l <= ny-1
     int lStart =
@@ -1170,17 +1332,18 @@ void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
     int lEnd =
       clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 1, ny - 1);
 
-    if (iEnd < iStart || lEnd < lStart) return;
+    // if (iEnd < iStart || lEnd < lStart) return;
+    if (lEnd < lStart) return;
 
     double segmentLength = dy;
     double G_perSegment  = 1.0 / (RL * segmentLength); // Siemens
 
-    for (int i = iStart; i <= iEnd; ++i) {
-        for (int l = lStart; l <= lEnd; ++l) {
-            int iy = l - 1;
-            grid.gy(i, iy) += G_perSegment;
-        }
+    // for (int i = iStart; i <= iEnd; ++i) {
+    for (int l = lStart; l <= lEnd; ++l) {
+        int iy = l - 1;
+        grid.gy(ix, iy) += G_perSegment;
     }
+    // }
 }
 
 // -----------------------------------------------------------------------------
@@ -1407,10 +1570,10 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
     // 0) Build a per-(net,layer) spatial lookup of stripes on the coarse tiles
     // ---------------------------------------------------------------------
     struct StripeSpatialIndex {
-        int nx = 0;
-        int ny = 0;
-        std::vector<std::vector<int>>
-          buckets; // buckets[iy*nx+ix] -> stripe indices
+        int                           nx = 0;
+        int                           ny = 0;
+        // buckets[iy*nx+ix] -> stripe indices
+        std::vector<std::vector<int>> buckets;
 
         void init(int nx_, int ny_) {
             nx = nx_;
@@ -1446,8 +1609,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         return {ix, iy};
     };
 
-    // Insert each stripe into the buckets of tiles it overlaps (bbox in
-    // tile-space).
+    // Insert stripes into the buckets of tiles it overlaps (bbox of tiles)
     for (std::size_t sIdx = 0; sIdx < mRecordedStripes.size(); ++sIdx) {
         const StripeRec& s = mRecordedStripes[sIdx];
         if (s.netIndex < 0 || s.netIndex >= mNumNets) continue;
@@ -1481,6 +1643,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
     // ---------------------------------------------------------------------
     // 1) Discretize all stripes into in-plane conductance grids
     // ---------------------------------------------------------------------
+
     for (const StripeRec& s : mRecordedStripes) {
         if (s.netIndex < 0 || s.netIndex >= mNumNets) continue;
         if (s.layerIndex < 0 || s.layerIndex >= mNumLayers) continue;

@@ -123,8 +123,8 @@ CircuitConnectivityChecker::checkIsolation(const CircuitGraph& circuit) {
         compInfo.nodes = componentNodes;
 
         // Create a set for fast membership check
-        std::unordered_set<IdString, IdString::Hash> nodeSet(
-          componentNodes.begin(), componentNodes.end());
+        IdString::Set<IdString> nodeSet(componentNodes.begin(),
+                                        componentNodes.end());
 
         // Check for power sources in this component
         for (const auto& vsrc : circuit.mVsrcs) {

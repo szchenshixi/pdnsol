@@ -121,8 +121,10 @@ struct NetInfo {
 };
 
 struct LayerGridResolution {
-    int nx = 0;
-    int ny = 0;
+    int sx = -1; // Tile size in X direction (um)
+    int sy = -1; // Tile size in Y direction (um)
+    int nx = -1; // Computed tile count in X direction
+    int ny = -1; // Computed tile count in Y direction
 };
 
 // -----------------------------------------------------------------------------
@@ -176,8 +178,7 @@ struct StripeDerived {
 
 class CoarsePdnBuilder3D {
   public:
-    CoarsePdnBuilder3D(TechDatabase& techDb, int defaultGridNx,
-                       int                                       defaultGridNy,
+    CoarsePdnBuilder3D(TechDatabase& techDb, LayerGridResolution defaultRes,
                        const IdString::Map<LayerGridResolution>& perLayerRes,
                        const std::vector<std::string>&           powerNetNames,
                        const std::vector<std::string>& groundNetNames,
@@ -244,6 +245,7 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // Stripe accumulation per (net,layer)
     // -----------------------------------------------------------------
+
     void recordStripeRectangle(const std::string& netName,
                                const std::string& layerName, int x0Dbu,
                                int y0Dbu, int x1Dbu, int y1Dbu);
@@ -277,6 +279,7 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // CircuitGraph construction
     // -----------------------------------------------------------------
+
     void finalizeRecordedPdnGeometry();
     void buildCircuitGraph(CircuitGraph& graph);
 
@@ -307,10 +310,8 @@ class CoarsePdnBuilder3D {
 
   private:
     // Inputs
-    TechDatabase& mTechDb;
-    int           mDefaultGridNx = 0;
-    int           mDefaultGridNy = 0;
-    double        mDefaultPkgR   = 0.0;
+    TechDatabase&       mTechDb;
+    LayerGridResolution mDefaultRes;
 
     // PDN nets
     IdString::Map<NetInfo> mNetByName;

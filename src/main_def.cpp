@@ -110,19 +110,24 @@ int main(int argc, char** argv) {
     // 3) Simulation Configuration
     // ============================================================
 
-    const Json& simConfigJ    = configJ["simulation"];
-    const Json& gridConfigJ   = simConfigJ["grid"];
-    const int   defaultGridNx = gridConfigJ["default"]["nx"];
-    const int   defaultGridNy = gridConfigJ["default"]["ny"];
+    const Json&               simConfigJ     = configJ["simulation"];
+    const Json&               gridConfigJ    = simConfigJ["grid"];
+    const int                 defaultStrideX = gridConfigJ["default"]["sx"];
+    const int                 defaultStrideY = gridConfigJ["default"]["sy"];
+    const LayerGridResolution defaultGridRes = {defaultStrideX,
+                                                defaultStrideY};
+
     IdString::Map<LayerGridResolution> perLayerGridRes;
+    // Example: stride_X/Y feature is under construction
+    // "M10": { "nx": 64, "ny": 64, "sx": -1, "sy": -1 }
     for (const auto& [l, j] : gridConfigJ.items()) {
-        IdString layerName         = IdString(l);
-        perLayerGridRes[layerName] = LayerGridResolution{j["nx"], j["ny"]};
+        IdString  layerName        = IdString(l);
+        const int strideX          = j["sx"];
+        const int strideY          = j["sy"];
+        perLayerGridRes[layerName] = LayerGridResolution{strideX, strideY};
     }
 
-    CoarsePdnBuilder3D builder(techDb,
-                               defaultGridNx,
-                               defaultGridNy,
+    CoarsePdnBuilder3D builder(techDb, defaultGridRes,
                                perLayerGridRes,
                                powerNets,
                                groundNets,

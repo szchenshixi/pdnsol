@@ -71,9 +71,9 @@ void CircuitDecorator::addVoltageSourceFromConfig(
     }
 
     std::string line;
-    std::size_t lineNo = 0;
-    std::size_t vsrcCounter =
-      graph.mVsrcs.size(); // start after existing sources
+    std::size_t lineNo      = 0;
+    // start after existing sources
+    std::size_t vsrcCounter = graph.mVsrcs.size();
 
     auto isCommentOrEmpty = [](const std::string& line) {
         std::string t = trim(line);
@@ -96,9 +96,6 @@ void CircuitDecorator::addVoltageSourceFromConfig(
     IdString::Map<NodeVsrcInfo> nodeInfoMap;
 
     // Helper: iterate over graph.mNodes
-    // NOTE: This assumes IdString::Map<Node> is something like:
-    //   using IdString::Map<Node> = std::unordered_map<IdString, Node, IdString::Hash>;
-    // If your IdString::Map<Node> is different, adjust the "for" loop accordingly.
     auto findClosestNodeOnLayerAndNet =
       [&graph, &landingLayerId](const IdString& netNameId,
                                 Tick            xTick,
@@ -271,20 +268,17 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         //    package resistor handled elsewhere), modify mFromNode/mToNode
         //    wiring here accordingly.
 
-        // One "ideal" global node per net.
-        const std::string idealNodeStr = netNameStr + "_IDEAL";
-        const IdString    idealNodeId(idealNodeStr);
-
         Vsrc              vsrc;
         const std::string vsrcName = "VSRC_" + std::to_string(vsrcCounter);
         vsrc.mName                 = IdString(vsrcName);
-        // global ideal supply node
-        vsrc.mFromNode             = idealNodeId;
         // package-side node feeding R_pkg_eq
-        vsrc.mToNode               = info.pkgNode;
+        vsrc.mFromNode             = info.pkgNode;
+        // Ideal reference ground
+        vsrc.mToNode               = IdString("GND");
         vsrc.mType                 = Vsrc::PACKAGE;
         vsrc.mV                    = voltage;
 
+        graph.ensureNode(info.pkgNode);
         graph.mVsrcs.push_back(vsrc);
         ++vsrcCounter;
     } // while getline
