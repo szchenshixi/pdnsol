@@ -45,13 +45,15 @@
 #include <unordered_map>
 #include <vector>
 
+#include "pdnsol/solver/solver_basic.hpp"
+#include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/id_string.hpp"
 
 namespace pdnsol {
 
 // Forward declarations to avoid pulling large headers into users of this API
-class CircuitGraph;
-class MNASolution;
+// class CircuitGraph;
+// class MNASolution;
 
 // -------------------------
 // Configuration & basic types
@@ -134,7 +136,7 @@ struct IRDropHeatmap {
 };
 
 // One heatmap per netId (layer-(VDD/VSS) combination).
-using HeatmapByNet = std::unordered_map<int, IRDropHeatmap>;
+using HeatmapByNet = std::unordered_map<NetKey, IRDropHeatmap, NetKey::Hash>;
 
 // Layout bounding box (meters).
 struct LayoutBBox {

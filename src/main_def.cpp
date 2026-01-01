@@ -147,7 +147,7 @@ int main(int argc, char** argv) {
 
     CircuitGraph circ;
     if (!builder.buildCoarsePdnFromDef(defPath, circ)) {
-        PDN_FATAL("Failed to build 3D coarse PDN graph.");
+        PDN_FATAL("Failed to build 3D coarse PDN graph");
     }
     circ.purgeParallelElements();
     circ.purgeIsolatedNodes();
@@ -160,7 +160,7 @@ int main(int argc, char** argv) {
     CircuitDecorator decorator(circ, decoratorConfig);
     decorator.build();
 
-    PDN_INFO("3D Coarse PDN graph built.");
+    PDN_INFO("3D Coarse PDN graph built");
     PDN_INFO("Nodes:      %d", circ.mNodes.size());
     PDN_INFO("MetalRes:   %d", circ.mMetalResistors.size());
     PDN_INFO("ViaRes:     %d", circ.mViaResistors.size());
