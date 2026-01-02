@@ -219,9 +219,9 @@ class CoarsePdnBuilder3D {
     // Convert a routed segment into a rectangle and feed it into the existing
     // rectangle-based PDN builder. widthDbu is the wire width from
     // "ROUTED/NEW" (in DBU).
-    void addStripeFromSegment(const std::string& netName,
-                              const std::string& layerName, int x0, int y0,
-                              int x1, int y1, int widthDbu);
+    void recordStripeFromSegment(const std::string& netName,
+                                 const std::string& layerName, int x0, int y0,
+                                 int x1, int y1, int widthDbu);
 
     // -----------------------------------------------------------------
     // DEF parsing: PDN stripes, vias, and bumps
@@ -269,8 +269,10 @@ class CoarsePdnBuilder3D {
     // void addViaInstance(const std::string& netName, const std::string&
     // viaName,
     //                     int xDbu, int yDbu);
-    void addTsvInstance(const std::string& instName,
-                        const std::string& macroName, int xDbu, int yDbu);
+    // void addTsvInstance(const std::string& instName,
+    //                     const std::string& macroName, int xDbu, int yDbu);
+    void recordTsvInstance(const std::string& instName,
+                           const std::string& macroName, int xDbu, int yDbu);
 
     ViaGrid3D& getOrCreateViaGrid(int netIndex, int lb, int lt);
 

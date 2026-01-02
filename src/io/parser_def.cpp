@@ -479,9 +479,11 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
             mInPlaneGrids[n][l].init(mLayerGridRes[l].nx,
                                      mLayerGridRes[l].ny,
                                      mDieXMinUm,
-                                     mDieXMaxUm,
+                                     //  mDieXMaxUm,
+                                     mDieXMinUm + paddedDieWidth,
                                      mDieYMinUm,
-                                     mDieYMaxUm);
+                                     //  mDieYMaxUm,
+                                     mDieYMinUm + paddedDieHeight);
         }
     }
 }
@@ -531,13 +533,14 @@ bool CoarsePdnBuilder3D::parseDefPoint(const std::vector<std::string>& tokens,
 // Convert a routed segment into a rectangle and feed it into the
 // existing rectangle-based PDN builder.
 // widthDbu is the wire width from "ROUTED/NEW" (in DBU).
-void CoarsePdnBuilder3D::addStripeFromSegment(const std::string& netName,
-                                              const std::string& layerName,
-                                              int x0, int y0, int x1, int y1,
-                                              int widthDbu) {
+void CoarsePdnBuilder3D::recordStripeFromSegment(const std::string& netName,
+                                                 const std::string& layerName,
+                                                 int x0, int y0, int x1,
+                                                 int y1, int widthDbu) {
     if (widthDbu <= 0) return;
 
-    const int half = widthDbu / 2;
+    const int halfLo = widthDbu / 2;
+    const int halfHi = widthDbu - halfLo;
 
     if (x0 == x1) {
         // Vertical stripe
@@ -546,7 +549,7 @@ void CoarsePdnBuilder3D::addStripeFromSegment(const std::string& netName,
         // addStripeRectangle(
         //   netName, layerName, x0 - half, yMin, x0 + half, yMax);
         recordStripeRectangle(
-          netName, layerName, x0 - half, yMin, x0 + half, yMax);
+          netName, layerName, x0 - halfLo, yMin, x0 + halfHi, yMax);
     } else if (y0 == y1) {
         // Horizontal stripe
         int xMin = std::min(x0, x1);
@@ -554,7 +557,7 @@ void CoarsePdnBuilder3D::addStripeFromSegment(const std::string& netName,
         // addStripeRectangle(
         //   netName, layerName, xMin, y0 - half, xMax, y0 + half);
         recordStripeRectangle(
-          netName, layerName, xMin, y0 - half, xMax, y0 + half);
+          netName, layerName, xMin, y0 - halfLo, xMax, y0 + halfHi);
     } else {
         // Non-Manhattan (unlikely in PDN); fall back to bounding box.
         int xMin = std::min(x0, x1);
@@ -636,10 +639,14 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
             section = Section::NONE;
             if (!currentCompInstName.empty() &&
                 !currentCompMacroName.empty()) {
-                addTsvInstance(currentCompInstName,
-                               currentCompMacroName,
-                               currentCompX,
-                               currentCompY);
+                // addTsvInstance(currentCompInstName,
+                //                currentCompMacroName,
+                //                currentCompX,
+                //                currentCompY);
+                recordTsvInstance(currentCompInstName,
+                                  currentCompMacroName,
+                                  currentCompX,
+                                  currentCompY);
             }
             continue;
         }
@@ -773,13 +780,13 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
 
                     if (!currentLayerName.empty() &&
                         currentRouteWidthDbu > 0) {
-                        addStripeFromSegment(currentNetName,
-                                             currentLayerName,
-                                             x0,
-                                             y0,
-                                             x1,
-                                             y1,
-                                             currentRouteWidthDbu);
+                        recordStripeFromSegment(currentNetName,
+                                                currentLayerName,
+                                                x0,
+                                                y0,
+                                                x1,
+                                                y1,
+                                                currentRouteWidthDbu);
                     }
 
                     lastX         = x1;
@@ -797,13 +804,13 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
 
                         if (!currentLayerName.empty() &&
                             currentRouteWidthDbu > 0) {
-                            addStripeFromSegment(currentNetName,
-                                                 currentLayerName,
-                                                 lastX,
-                                                 lastY,
-                                                 x2,
-                                                 y2,
-                                                 currentRouteWidthDbu);
+                            recordStripeFromSegment(currentNetName,
+                                                    currentLayerName,
+                                                    lastX,
+                                                    lastY,
+                                                    x2,
+                                                    y2,
+                                                    currentRouteWidthDbu);
                         }
 
                         lastX = x2;
@@ -862,13 +869,13 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
 
                     if (!currentLayerName.empty() &&
                         currentRouteWidthDbu > 0) {
-                        addStripeFromSegment(currentNetName,
-                                             currentLayerName,
-                                             x0,
-                                             y0,
-                                             x1,
-                                             y1,
-                                             currentRouteWidthDbu);
+                        recordStripeFromSegment(currentNetName,
+                                                currentLayerName,
+                                                x0,
+                                                y0,
+                                                x1,
+                                                y1,
+                                                currentRouteWidthDbu);
                     }
 
                     lastX         = x1;
@@ -886,13 +893,13 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
 
                         if (!currentLayerName.empty() &&
                             currentRouteWidthDbu > 0) {
-                            addStripeFromSegment(currentNetName,
-                                                 currentLayerName,
-                                                 lastX,
-                                                 lastY,
-                                                 x2,
-                                                 y2,
-                                                 currentRouteWidthDbu);
+                            recordStripeFromSegment(currentNetName,
+                                                    currentLayerName,
+                                                    lastX,
+                                                    lastY,
+                                                    x2,
+                                                    y2,
+                                                    currentRouteWidthDbu);
                         }
 
                         lastX = x2;
@@ -1116,28 +1123,52 @@ void CoarsePdnBuilder3D::handleComponentsLine(const std::string& line,
     std::vector<std::string> tokens = tokenizeDef(line);
     if (tokens.empty()) return;
 
+    // // Start of a new component: "- <instName> <macroName> ..."
+    // if (tokens[0] == "-") {
+    //     // Finalize previous component (if any)
+    //     if (!currentInstName.empty() && !currentMacroName.empty()) {
+    //         addTsvInstance(
+    //           currentInstName, currentMacroName, currentX, currentY);
+    //     }
+
+    //     currentInstName.clear();
+    //     currentMacroName.clear();
+    //     currentX = currentY = 0;
+
+    //     if (tokens.size() >= 3) {
+    //         currentInstName  = stripDefQuotes(tokens[1]);
+    //         currentMacroName = stripDefQuotes(tokens[2]);
+    //     }
+    //     return;
+    // }
+    std::size_t       i = 0;
+    const std::size_t n = tokens.size();
+
     // Start of a new component: "- <instName> <macroName> ..."
     if (tokens[0] == "-") {
         // Finalize previous component (if any)
         if (!currentInstName.empty() && !currentMacroName.empty()) {
-            addTsvInstance(
+            recordTsvInstance(
               currentInstName, currentMacroName, currentX, currentY);
         }
 
         currentInstName.clear();
         currentMacroName.clear();
-        currentX = currentY = 0;
+        // IMPORTANT: unknown until we parse PLACED/FIXED
+        currentX = currentY = -1;
 
-        if (tokens.size() >= 3) {
+        if (n >= 3) {
             currentInstName  = stripDefQuotes(tokens[1]);
             currentMacroName = stripDefQuotes(tokens[2]);
+            i = 3; // keep parsing same line for "+ PLACED/FIXED ..."
+        } else {
+            return;
         }
-        return;
     }
 
     // Look for "+ FIXED ( x y )" or "+ PLACED ( x y )"
-    std::size_t       i = 0;
-    const std::size_t n = tokens.size();
+    // std::size_t       i = 0;
+    // const std::size_t n = tokens.size();
     while (i < n) {
         const std::string& tok = tokens[i];
 
@@ -1324,7 +1355,7 @@ void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
     //   clamp(static_cast<int>(std::floor((x0 - grid.xMin) / dx)), 0, nx - 1);
     // int iEnd =
     //   clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 0, nx - 1);
-    int ix = representativeRow(grid, x0, x1);
+    int ix = representativeCol(grid, x0, x1);
 
     // Horizontal boundaries [lStart..lEnd], 1 <= l <= ny-1
     int lStart =
@@ -1431,102 +1462,210 @@ static std::string extractNetNameFromInstance(const std::string& instName,
     // The pattern is: U_{macro}_{net}_X (where X is usually a number)
 
     // Remove "U_" prefix
-    if (instName.substr(0, 2) != "U_") {
+    // if (instName.substr(0, 2) != "U_") {
+    //     return "";
+    // }
+
+    // // Find the position after the macro name
+    // std::string macroPattern = macroName;
+    // std::transform(macroPattern.begin(),
+    //                macroPattern.end(),
+    //                macroPattern.begin(),
+    //                [](unsigned char c) { return std::tolower(c); });
+
+    // std::string instLower = instName.substr(2); // Skip "U_"
+    // std::transform(instLower.begin(),
+    //                instLower.end(),
+    //                instLower.begin(),
+    //                [](unsigned char c) { return std::tolower(c); });
+
+    // // Find macro name in the instance (case-insensitive)
+    // size_t macroPos = instLower.find(macroPattern);
+    // if (macroPos == std::string::npos) {
+    //     return "";
+    // }
+
+    // // Position after macro name
+    // size_t afterMacro = macroPos + macroPattern.length();
+
+    // // Skip underscores after macro name
+    // while (afterMacro < instName.length() - 2 && instName[afterMacro] ==
+    // '_') {
+    //     afterMacro++;
+    // }
+
+    // // Find the last underscore before the trailing number
+    // size_t lastUnderscore = instName.rfind('_');
+    // if (lastUnderscore <= afterMacro) {
+    //     return "";
+    // }
+
+    // // Extract net name
+    // return instName.substr(afterMacro, lastUnderscore - afterMacro);
+
+    // Expected pattern (example):
+    //   U_<macroName>_<netName>_<number>
+    //
+    // We do a case-insensitive search for <macroName>, then take the substring
+    // between the macro and the final "_<digits>" suffix.
+
+    auto toLower = [](std::string s) {
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
+            return static_cast<char>(std::tolower(c));
+        });
+        return s;
+    };
+
+    const std::string instLower  = toLower(instName);
+    const std::string macroLower = toLower(macroName);
+
+    // Require "U_" prefix (case-insensitive).
+    if (instLower.size() < 2 || instLower.rfind("u_", 0) != 0) {
         return "";
     }
 
-    // Find the position after the macro name
-    std::string macroPattern = macroName;
-    std::transform(macroPattern.begin(),
-                   macroPattern.end(),
-                   macroPattern.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+    // Find macro name in the instance (case-insensitive), starting after "U_".
+    const std::size_t searchStart = 2;
+    const std::size_t macroPos    = instLower.find(macroLower, searchStart);
+    if (macroPos == std::string::npos) return "";
 
-    std::string instLower = instName.substr(2); // Skip "U_"
-    std::transform(instLower.begin(),
-                   instLower.end(),
-                   instLower.begin(),
-                   [](unsigned char c) { return std::tolower(c); });
+    std::size_t afterMacro = macroPos + macroLower.size();
+    if (afterMacro > instName.size()) return "";
 
-    // Find macro name in the instance (case-insensitive)
-    size_t macroPos = instLower.find(macroPattern);
-    if (macroPos == std::string::npos) {
-        return "";
+    // Skip '_' after macro name.
+    while (afterMacro < instName.size() && instName[afterMacro] == '_') {
+        ++afterMacro;
     }
 
-    // Position after macro name
-    size_t afterMacro = macroPos + macroPattern.length();
+    // We expect a numeric suffix "_<digits>".
+    const std::size_t lastUnderscore = instName.rfind('_');
+    if (lastUnderscore == std::string::npos) return "";
+    if (lastUnderscore <= afterMacro) return "";
 
-    // Skip underscores after macro name
-    while (afterMacro < instName.length() - 2 && instName[afterMacro] == '_') {
-        afterMacro++;
+    // Verify suffix is all digits.
+    if (lastUnderscore + 1 >= instName.size()) return "";
+    for (std::size_t i = lastUnderscore + 1; i < instName.size(); ++i) {
+        if (!std::isdigit(static_cast<unsigned char>(instName[i]))) {
+            return "";
+        }
     }
 
-    // Find the last underscore before the trailing number
-    size_t lastUnderscore = instName.rfind('_');
-    if (lastUnderscore <= afterMacro) {
-        return "";
-    }
-
-    // Extract net name
     return instName.substr(afterMacro, lastUnderscore - afterMacro);
 }
 
 // For example:
 // U_TSV_PG_Power1_VDD_PERI_MEDIA1_0 TSV_PG_POWER1 100 1993000
-void CoarsePdnBuilder3D::addTsvInstance(const std::string& instName,
-                                        const std::string& macroName, int xDbu,
-                                        int yDbu) {
-    const TechTsv* tsv = mTechDb.getTsv(IdString::tryLookup(macroName));
-    if (!tsv) return; // Not a TSV
+// void CoarsePdnBuilder3D::addTsvInstance(const std::string& instName,
+//                                         const std::string& macroName, int
+//                                         xDbu, int yDbu) {
+//     const TechTsv* tsv = mTechDb.getTsv(IdString::tryLookup(macroName));
+//     if (!tsv) return; // Not a TSV
 
+//     if (xDbu < 0 || yDbu < 0) {
+//         PDN_WARN("Found a TSV without coordinates. Skip.");
+//         return;
+//     }
+
+//     std::string netName = extractNetNameFromInstance(instName, macroName);
+//     if (netName.empty()) {
+//         PDN_WARN("Failed to extract net name from instance: %s",
+//                  instName.c_str());
+//         return;
+//     }
+
+//     auto netIt = mNetByName.find(IdString::tryLookup(netName));
+//     if (netIt == mNetByName.end()) return;
+//     int netIndex = netIt->second.index;
+
+//     auto blIt = mLayerNameToIndex.find(tsv->bottomLayer);
+//     auto tlIt = mLayerNameToIndex.find(tsv->topLayer);
+//     if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
+//         return;
+
+//     int lb = blIt->second;
+//     int lt = tlIt->second;
+
+//     if (mInPlaneGrids.empty() || lb < 0 || lb >= mNumLayers) return;
+
+//     ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
+
+//     double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
+//     double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
+
+//     // Use the per-layer grids’ geometry assuming all grids share die bbox
+//     const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
+//     const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
+
+//     const int ixB =
+//       clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
+//     const int iyB =
+//       clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
+
+//     const int ixT =
+//       clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
+//     const int iyT =
+//       clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
+
+//     if (tsv->resistance <= 0.0) return;
+
+//     vg.addConductance(ixB, iyB, ixT, iyT, 1.0 / tsv->resistance);
+// }
+
+void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
+                                           const std::string& macroName,
+                                           int xDbu, int yDbu) {
+    // Only TSV macros should be recorded.
+    const TechTsv* tsv = mTechDb.getTsv(IdString(macroName));
+    if (!tsv) return;
+
+    // Coordinates are required for correct tile snapping.
     if (xDbu < 0 || yDbu < 0) {
-        PDN_WARN("Found a TSV without coordinates. Skip.");
+        PDN_WARN("Found a TSV without coordinates. Skip. inst=%s macro=%s",
+                 instName.c_str(),
+                 macroName.c_str());
+        return;
     }
 
+    // Derive net name from the instance naming convention.
     std::string netName = extractNetNameFromInstance(instName, macroName);
     if (netName.empty()) {
-        PDN_WARN("Failed to extract net name from instance: %s",
-                 instName.c_str());
+        PDN_WARN("Failed to extract TSV net name from instance: %s (macro=%s)",
+                 instName.c_str(),
+                 macroName.c_str());
         return;
     }
 
     auto netIt = mNetByName.find(IdString::tryLookup(netName));
-    if (netIt == mNetByName.end()) return;
-    int netIndex = netIt->second.index;
+    if (netIt == mNetByName.end()) {
+        // Not a PDN net we care about.
+        return;
+    }
+    const int netIndex = netIt->second.index;
 
+    // Resolve layers
     auto blIt = mLayerNameToIndex.find(tsv->bottomLayer);
     auto tlIt = mLayerNameToIndex.find(tsv->topLayer);
-    if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
+    if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end()) {
         return;
+    }
 
-    int lb = blIt->second;
-    int lt = tlIt->second;
+    const int lb = blIt->second;
+    const int lt = tlIt->second;
 
-    if (mInPlaneGrids.empty() || lb < 0 || lb >= mNumLayers) return;
-
-    ViaGrid3D& vg = getOrCreateViaGrid(netIndex, lb, lt);
-
-    double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
-    double y_um = static_cast<double>(yDbu) / mDbuPerMicron;
-
-    // Use the per-layer grids’ geometry assuming all grids share die bbox
-    const ConductanceGrid2D& gb = mInPlaneGrids[netIndex][lb];
-    const ConductanceGrid2D& gt = mInPlaneGrids[netIndex][lt];
-
-    const int ixB =
-      clamp(static_cast<int>((x_um - gb.xMin) / gb.dx), 0, gb.nx - 1);
-    const int iyB =
-      clamp(static_cast<int>((y_um - gb.yMin) / gb.dy), 0, gb.ny - 1);
-
-    const int ixT =
-      clamp(static_cast<int>((x_um - gt.xMin) / gt.dx), 0, gt.nx - 1);
-    const int iyT =
-      clamp(static_cast<int>((y_um - gt.yMin) / gt.dy), 0, gt.ny - 1);
-
+    if (lb < 0 || lb >= mNumLayers || lt < 0 || lt >= mNumLayers) return;
+    if (lb == lt) return;
     if (tsv->resistance <= 0.0) return;
 
-    vg.addConductance(ixB, iyB, ixT, iyT, 1.0 / tsv->resistance);
+    ViaRec v;
+    v.netIndex = netIndex;
+    v.x        = xDbu;
+    v.y        = yDbu;
+    v.viaName  = IdString(macroName); // stored only for debugging/metadata
+    v.lb       = lb;
+    v.lt       = lt;
+    v.g        = 1.0 / tsv->resistance;
+
+    mRecordedVias.push_back(std::move(v));
 }
 
 ViaGrid3D& CoarsePdnBuilder3D::getOrCreateViaGrid(int netIndex, int lb,
@@ -1903,8 +2042,8 @@ void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph& graph) {
         }
     }
 
-    // 2) Create ViaRes from aggregated via grids (includes TSVs if added
-    // via addTsvInstance)
+    // 2) Create ViaRes from aggregated via grids (includes TSVs recorded via
+    // recordTsvInstance)
     int viaCounter = 0;
     for (const ViaGrid3D& vg : mViaGrids) {
         const int netIndex = vg.netIndex;

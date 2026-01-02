@@ -267,9 +267,9 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     auto it = mNodes.find(name);
     if (it != mNodes.end()) {
         Node& node = it->second;
-        if (net && !node.mNet) node.mNet = NetId(net);
-        if (x && !node.mX) node.mX = FPN::toRep(*x);
-        if (y && !node.mY) node.mY = FPN::toRep(*y);
+        if (net >= 0 && !node.mNet) node.mNet = NetId(net);
+        if (x && node.mX < 0) node.mX = FPN::toRep(*x);
+        if (y && node.mY < 0) node.mY = FPN::toRep(*y);
         return node;
     }
 
