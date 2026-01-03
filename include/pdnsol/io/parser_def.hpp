@@ -19,14 +19,14 @@ namespace pdnsol {
 // -----------------------------------------------------------------------------
 
 // Strip optional DEF double quotes from a name token, e.g. "VDD" -> VDD.
-std::string stripDefQuotes(const std::string& s);
+// std::string stripDefQuotes(const std::string& s);
 
 // Robust integer parser for DEF coordinate tokens.
-bool parseIntSafe(const std::string& s, int& out);
+// bool parseIntSafe(const std::string& s, int& out);
 
 // Simple tokenizer for DEF lines.
 // Splits on whitespace and also makes '(', ')', ';', '+' separate tokens.
-std::vector<std::string> tokenizeDef(const std::string& s);
+// std::vector<std::string> tokenizeDef(const std::string& s);
 
 // -----------------------------------------------------------------------------
 // Optional routing context helper (currently unused but kept as utility type)
@@ -120,6 +120,18 @@ struct NetInfo {
     bool     isGround = false;
 };
 
+// Net selection/filtering for graph construction
+struct NetBuildFilter {
+    // If empty => include all PDN nets registered in the builder
+    std::vector<std::string> include; // e.g. {"VDD", "VDDQ"}
+    // Applied after include
+    std::vector<std::string> exclude; // e.g. {"VSS"}
+
+    // Type filters (handy for "only power nets" or "only ground nets")
+    bool includePower  = true;
+    bool includeGround = true;
+};
+
 struct LayerGridResolution {
     int sx = -1; // Tile size in X direction (um)
     int sy = -1; // Tile size in Y direction (um)
@@ -191,6 +203,16 @@ class CoarsePdnBuilder3D {
     bool buildCoarsePdnFromDef(const std::string& defPath,
                                CircuitGraph&      outGraph);
 
+    // Build combined graph but only for nets passing `filter`
+    bool buildCoarsePdnFromDef(const std::string&    defPath,
+                               CircuitGraph&         outGraph,
+                               const NetBuildFilter& filter);
+
+    // Build one CircuitGraph per selected net (net name -> graph)
+    bool buildCoarsePdnGraphsByNetFromDef(
+      const std::string& defPath, IdString::Map<CircuitGraph>& outGraphs,
+      const NetBuildFilter& filter = NetBuildFilter{});
+
   private:
     // -----------------------------------------------------------------
     // DEF parsing: geometry (UNITS, DIEAREA)
@@ -200,11 +222,18 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // Initialize in-plane grids for each (net,layer)
     // -----------------------------------------------------------------
+
     void initInPlaneGrids();
 
     // Clear per-build state so each call to buildCoarsePdnFromDef()
     // starts with a clean slate.
     void resetForNewBuild();
+
+    // -----------------------------------------------------------------
+    // Helpers for per-net PDN construction
+    // -----------------------------------------------------------------
+
+    std::vector<int> selectNetIndices(const NetBuildFilter& filter) const;
 
     // -----------------------------------------------------------------
     // Helpers for SPECIALNETS routing
@@ -283,7 +312,10 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
 
     void finalizeRecordedPdnGeometry();
-    void buildCircuitGraph(CircuitGraph& graph);
+    // void buildCircuitGraph(CircuitGraph& graph);
+    // Build graph for a subset of nets (by netIndex)
+    void buildCircuitGraph(CircuitGraph&           graph,
+                           const std::vector<int>& netIndices);
 
     // Parse RECT coordinates from token stream.
     // Supports:
@@ -322,11 +354,12 @@ class CoarsePdnBuilder3D {
 
     // PDN layers
     std::vector<IdString>            mLayerOrder;
+    IdString::Map<int>               mLayerNameToIndex;
     // (layer index -> grid resolution)
     std::vector<LayerGridResolution> mLayerGridRes;
-    IdString::Map<int>               mLayerNameToIndex;
     int                              mNumLayers = 0;
 
+    // num_nets * num_layers
     int mNumNetLayerComb = 0;
 
     // DEF geometry
@@ -341,6 +374,7 @@ class CoarsePdnBuilder3D {
 
     // Vertical via/TSV grids
     std::vector<ViaGrid3D>                 mViaGrids;
+    // (net, bottom_layer, top_layer) --> via
     std::unordered_map<std::uint64_t, int> mViaGridLookup;
 
     std::vector<StripeRec> mRecordedStripes;
