@@ -75,6 +75,13 @@ struct ViaRes {
     ScalarType mR = 0.0;
 };
 
+struct TsvRes {
+    IdString   mName;
+    IdString   mN1;
+    IdString   mN2;
+    ScalarType mR = 0.0;
+};
+
 struct PkgRes {
     IdString   mName;
     IdString   mN1;
@@ -117,6 +124,7 @@ struct CircuitGraph {
     IdString::Map<Node>      mNodes;
     std::vector<MetalRes>    mMetalResistors;
     std::vector<ViaRes>      mViaResistors;
+    std::vector<TsvRes>      mTsvResistors;
     std::vector<PkgRes>      mPkgResistors;
     std::vector<Vsrc>        mVsrcs;
     std::vector<Isrc>        mIsrcs;

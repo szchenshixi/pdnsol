@@ -74,7 +74,7 @@ struct ConductanceGrid2D {
 // Vertical conductance grid for via/TSV aggregation
 // -----------------------------------------------------------------------------
 
-struct ViaGrid3D {
+struct ConductanceGrid3D {
     int netIndex       = -1;
     int bottomLayerIdx = -1;
     int topLayerIdx    = -1;
@@ -83,12 +83,15 @@ struct ViaGrid3D {
     int nxB = 0, nyB = 0; // bottom layer grid dims
     int nxT = 0, nyT = 0; // top layer grid dims
 
+    bool isTsv = false;
+
     // key = (bottomFlat << 32) | topFlat
     // value = total conductance (Siemens) between those two tiles, before
     // scaling.
     std::unordered_map<std::uint64_t, double> edgeG;
 
-    void init(int netIdx, int lb, int lt, int nxB, int nyB, int nxT, int nyT);
+    void init(int netIdx, int lb, int lt, int nxB, int nyB, int nxT, int nyT,
+              bool isTsv);
 
     static std::uint64_t packEdge(std::uint32_t flatB, std::uint32_t flatT) {
         return (static_cast<std::uint64_t>(flatB) << 32) |
@@ -154,6 +157,17 @@ struct ViaRec {
     int      netIndex = -1;
     int      x = 0, y = 0; // DBU
     IdString viaName;
+
+    int lb = -1; // bottom layer idx (resolved from tech via)
+    int lt = -1; // top layer idx
+
+    double g = 0.0; // conductance = 1/R
+};
+
+struct TsvRec {
+    int      netIndex = -1;
+    int      x = 0, y = 0; // DBU
+    IdString tsvName;
 
     int lb = -1; // bottom layer idx (resolved from tech via)
     int lt = -1; // top layer idx
@@ -303,7 +317,9 @@ class CoarsePdnBuilder3D {
     void recordTsvInstance(const std::string& instName,
                            const std::string& macroName, int xDbu, int yDbu);
 
-    ViaGrid3D& getOrCreateViaGrid(int netIndex, int lb, int lt);
+    ConductanceGrid3D& getOrCreateViaGrid(int netIndex, int lb, int lt);
+    ConductanceGrid3D& getOrCreateTsvGrid(int netIndex, int lb, int lt);
+    ConductanceGrid3D& getOrCreateGrid(int netIndex, int lb, int lt, bool isTsv);
 
     static std::uint64_t makeViaKey(int netIndex, int lb, int lt);
 
@@ -370,15 +386,16 @@ class CoarsePdnBuilder3D {
     double mDieYMaxUm    = 0.0;
 
     // In-plane conductance grids: [netIndex][layerIndex]
-    std::vector<std::vector<ConductanceGrid2D>> mInPlaneGrids;
+    std::vector<std::vector<ConductanceGrid2D>> m2DGrids;
 
     // Vertical via/TSV grids
-    std::vector<ViaGrid3D>                 mViaGrids;
-    // (net, bottom_layer, top_layer) --> via
-    std::unordered_map<std::uint64_t, int> mViaGridLookup;
+    std::vector<ConductanceGrid3D>         m3DGrids;
+    // (net, bottom_layer, top_layer) --> 3D_grid
+    std::unordered_map<std::uint64_t, int> m3DGridLookup;
 
     std::vector<StripeRec> mRecordedStripes;
     std::vector<ViaRec>    mRecordedVias;
+    std::vector<TsvRec>    mRecordedTsvs;
 };
 
 // Inline accessors for small structs
@@ -398,7 +415,7 @@ inline const double& ConductanceGrid2D::gy(int ix, int iy) const {
     return Gy[static_cast<std::size_t>(ix + nx * iy)];
 }
 
-inline double& ViaGrid3D::g(int ixB, int iyB, int ixT, int iyT) {
+inline double& ConductanceGrid3D::g(int ixB, int iyB, int ixT, int iyT) {
     PDN_FATAL_IF(ixB < 0 || ixB >= nxB,
                  "Bottom-X index %d beyond scope (0, %d)",
                  ixB,
@@ -418,7 +435,8 @@ inline double& ViaGrid3D::g(int ixB, int iyB, int ixT, int iyT) {
     return edgeG.at(packEdge(flatB, flatT));
 }
 
-inline const double& ViaGrid3D::g(int ixB, int iyB, int ixT, int iyT) const {
+inline const double& ConductanceGrid3D::g(int ixB, int iyB, int ixT,
+                                          int iyT) const {
     PDN_FATAL_IF(ixB < 0 || ixB >= nxB,
                  "Bottom-X index %d beyond scope (0, %d)",
                  ixB,

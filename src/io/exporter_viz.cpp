@@ -79,6 +79,15 @@ void exportCircuitGraphForVizJson(const CircuitGraph& c,
                               {"r", v.mR}});
     }
 
+    // Tsvs (layer inferred from node nets)
+    for (const auto& v : c.mTsvResistors) {
+        j["edges"].push_back({{"id", v.mName.c_str()},
+                              {"type", "tsv"},
+                              {"n1", v.mN1.c_str()},
+                              {"n2", v.mN2.c_str()},
+                              {"r", v.mR}});
+    }
+
     // Package resistors
     for (const auto& p : c.mPkgResistors) {
         j["edges"].push_back({{"id", p.mName.c_str()},

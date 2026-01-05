@@ -42,6 +42,7 @@ MNASystem assembleMNA(CircuitGraph& circ) {
     triplets.reserve(static_cast<std::size_t>(4) *
                        (circ.mMetalResistors.size() +
                         circ.mViaResistors.size() +
+                        circ.mTsvResistors.size() +
                         circ.mPkgResistors.size()) +
                      static_cast<std::size_t>(4) * numVsrcs);
 
@@ -103,6 +104,10 @@ MNASystem assembleMNA(CircuitGraph& circ) {
         stampConductance(resistor.mN1, resistor.mN2, conductance);
     }
     for (const auto& resistor : circ.mViaResistors) {
+        const ScalarType conductance = 1.0 / resistor.mR;
+        stampConductance(resistor.mN1, resistor.mN2, conductance);
+    }
+    for (const auto& resistor : circ.mTsvResistors) {
         const ScalarType conductance = 1.0 / resistor.mR;
         stampConductance(resistor.mN1, resistor.mN2, conductance);
     }

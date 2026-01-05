@@ -58,7 +58,7 @@ def load_json(path):
 def compute_connectivity(nodes, edges):
     """
     Connectivity definition:
-    - metal, via, pkg, vsrc, isrc all create undirected connections *between real nodes*
+    - metal, via, tsv, pkg, vsrc, isrc all create undirected connections *between real nodes*
       when both endpoints exist in `nodes`.
     - vsrc/isrc may connect a real node to an external endpoint that is NOT in `nodes`;
       in that case, we still want to:
@@ -75,6 +75,8 @@ def compute_connectivity(nodes, edges):
       isrc_nodes: set[node_id]
       vsrc_edge_ids_by_node: node_id -> list[str edge_id]
       isrc_edge_ids_by_node: node_id -> list[str edge_id]
+      tsv_nodes: set[node_id]
+      tsv_edge_ids_by_node: node_id -> list[str edge_id]
     """
     dsu = DSU(nodes.keys())
     degree = defaultdict(int)
@@ -82,8 +84,10 @@ def compute_connectivity(nodes, edges):
     vsrc_pkg_nodes = set()
     vsrc_nodes = set()
     isrc_nodes = set()
+    tsv_nodes = set()
     vsrc_edge_ids_by_node = defaultdict(list)
     isrc_edge_ids_by_node = defaultdict(list)
+    tsv_edge_ids_by_node = defaultdict(list)
 
     for e in edges:
         n1 = e.get("n1")
@@ -100,17 +104,20 @@ def compute_connectivity(nodes, edges):
             dsu.union(n1, n2)
 
         et = e.get("type")
-        if et in ("vsrc", "isrc"):
+        if et in ("vsrc", "isrc", "tsv"):
             eid = e.get("id")
             eid_s = str(eid) if eid is not None else "(no-id)"
             for nid in (n1, n2):
                 if et == "vsrc":
                     vsrc_pkg_nodes.add(nid)
                     vsrc_edge_ids_by_node[nid].append(eid_s)
-                else:
+                elif et == "isrc":
                     isrc_nodes.add(nid)
                     isrc_edge_ids_by_node[nid].append(eid_s)
-    
+                else:  # tsv
+                    tsv_nodes.add(nid)
+                    tsv_edge_ids_by_node[nid].append(eid_s)
+
     # Second pass to include the pdn node that connects to the pkg voltage node
     for e in edges:
         n1 = e.get("n1")
@@ -140,6 +147,8 @@ def compute_connectivity(nodes, edges):
         isrc_nodes,
         vsrc_edge_ids_by_node,
         isrc_edge_ids_by_node,
+        tsv_nodes,
+        tsv_edge_ids_by_node,
     )
 
 
@@ -193,6 +202,8 @@ def make_layer_figure(
     isrc_nodes,
     vsrc_edge_ids_by_node,
     isrc_edge_ids_by_node,
+    tsv_nodes,
+    tsv_edge_ids_by_node,
     layer: str,
     net: str,
     only_isolated: bool = False,
@@ -236,6 +247,8 @@ def make_layer_figure(
             tags.append("vsrc")
         if nid in isrc_nodes:
             tags.append("isrc")
+        if nid in tsv_nodes:
+            tags.append("tsv")
         return ",".join(tags) if tags else "-"
 
     # Helper to build batched line segments for edges on this layer
@@ -398,7 +411,62 @@ def make_layer_figure(
                 showlegend=True,
             ))
 
-    # --- NEW: emphasize nodes connected to vsrc/isrc ---
+    # TSV endpoints touching this layer (similar to vias, but distinct styling)
+    tsv_x, tsv_y, tsv_hover, tsv_symbol = [], [], [], []
+    for e in edges:
+        if e.get("type") != "tsv":
+            continue
+        n1, n2 = e.get("n1"), e.get("n2")
+        if n1 not in nodes or n2 not in nodes:
+            continue
+        l1 = nodes[n1].get("layer")
+        l2 = nodes[n2].get("layer")
+
+        r_this = layer_rank(layer)
+
+        # Endpoint n1 on this layer
+        if l1 == layer and n1 in pos:
+            r_other = layer_rank(l2)
+            sym = "triangle-up-open" if r_other > r_this else "triangle-down-open"
+            x, y = pos[n1]
+            tsv_x.append(x)
+            tsv_y.append(y)
+            tsv_symbol.append(sym)
+            tsv_hover.append(
+                f"tsv {e.get('id')}<br>{n1}@{l1} ↔ {n2}@{l2}<br>r={e.get('r')}"
+            )
+
+        # Endpoint n2 on this layer
+        if l2 == layer and n2 in pos:
+            r_other = layer_rank(l1)
+            sym = "triangle-up-open" if r_other > r_this else "triangle-down-open"
+            x, y = pos[n2]
+            tsv_x.append(x)
+            tsv_y.append(y)
+            tsv_symbol.append(sym)
+            tsv_hover.append(
+                f"tsv {e.get('id')}<br>{n2}@{l2} ↔ {n1}@{l1}<br>r={e.get('r')}"
+            )
+
+    if tsv_x:
+        fig.add_trace(
+            go.Scattergl(
+                x=tsv_x,
+                y=tsv_y,
+                mode="markers",
+                marker=dict(
+                    size=11,
+                    color="rgba(0,200,120,0.95)",
+                    symbol=tsv_symbol,
+                    line=dict(width=2, color="rgba(0,200,120,0.95)"),
+                ),
+                name="tsvs (endpoints)",
+                text=tsv_hover,
+                hoverinfo="text",
+                showlegend=True,
+            ))
+
+    # --- emphasize nodes connected to vsrc/isrc ---
     VSRC_STYLE = dict(
         size=16,
         symbol="circle-open",
@@ -417,6 +485,12 @@ def make_layer_figure(
         color="rgba(0,0,0,0.95)",
         line=dict(width=3, color="rgba(0,0,0,0.95)"),
     )
+    TSV_STYLE = dict(
+        size=16,
+        symbol="hexagon-open",
+        color="rgba(0,200,120,0.95)",
+        line=dict(width=3, color="rgba(0,200,120,0.95)"),
+    )
 
     vsrc_on_layer = (layer_nodes & vsrc_nodes) - isrc_nodes
     isrc_on_layer = (layer_nodes & isrc_nodes) - vsrc_nodes
@@ -432,11 +506,13 @@ def make_layer_figure(
             root = comp_of_node[nid]
             v_ids = _short_list(vsrc_edge_ids_by_node.get(nid, []))
             i_ids = _short_list(isrc_edge_ids_by_node.get(nid, []))
+            t_ids = _short_list(tsv_edge_ids_by_node.get(nid, []))
             xs.append(x)
             ys.append(y)
             hovers.append(
                 f"{label} node {nid}<br>"
                 f"layer={n.get('layer')} net={n.get('net')}<br>"
+                f"tsv_edges={t_ids}<br>"
                 f"vsrc_edges={v_ids}<br>"
                 f"isrc_edges={i_ids}<br>"
                 f"component={root} powered={root in powered_roots}<br>"
@@ -581,6 +657,8 @@ def main(argv=None):
         isrc_nodes,
         vsrc_edge_ids_by_node,
         isrc_edge_ids_by_node,
+        tsv_nodes,
+        tsv_edge_ids_by_node,
     ) = compute_connectivity(nodes, edges)
 
     if args.list_components:
@@ -609,6 +687,8 @@ def main(argv=None):
         isrc_nodes,
         vsrc_edge_ids_by_node,
         isrc_edge_ids_by_node,
+        tsv_nodes,
+        tsv_edge_ids_by_node,
         layer=args.layer,
         net=args.net,
         only_isolated=args.only_isolated,
