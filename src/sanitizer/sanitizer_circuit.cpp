@@ -36,6 +36,14 @@ void CircuitConnectivityChecker::buildGraph(const CircuitGraph& circuit) {
         }
     }
 
+    // Add edges from tsv resistors
+    for (const auto& res : circuit.mTsvResistors) {
+        if (nodeGraph.count(res.mN1) && nodeGraph.count(res.mN2)) {
+            nodeGraph[res.mN1].neighbors.insert(res.mN2);
+            nodeGraph[res.mN2].neighbors.insert(res.mN1);
+        }
+    }
+
     // Add edges from package resistors
     for (const auto& res : circuit.mPkgResistors) {
         if (nodeGraph.count(res.mN1) && nodeGraph.count(res.mN2)) {
@@ -155,6 +163,13 @@ CircuitConnectivityChecker::checkIsolation(const CircuitGraph& circuit) {
             }
         }
 
+        // Check for tsvs in this component
+        for (const auto& tsv : circuit.mTsvResistors) {
+            if (nodeSet.count(tsv.mN1) && nodeSet.count(tsv.mN2)) {
+                compInfo.tsvs.push_back(tsv.mName);
+            }
+        }
+
         // Check for package resistors in this component
         for (const auto& pkg : circuit.mPkgResistors) {
             if (nodeSet.count(pkg.mN1) && nodeSet.count(pkg.mN2)) {
@@ -235,6 +250,16 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
             }
         }
 
+        // Check tsv resistors
+        if (!hasConnection) {
+            for (const auto& tsv : circuit.mTsvResistors) {
+                if (tsv.mN1 == nodePair.first || tsv.mN2 == nodePair.first) {
+                    hasConnection = true;
+                    break;
+                }
+            }
+        }
+
         // Check package resistors
         if (!hasConnection) {
             for (const auto& pkg : circuit.mPkgResistors) {
@@ -294,6 +319,13 @@ CircuitConnectivityChecker::findShortCircuits(const CircuitGraph& circuit) {
         }
     }
 
+    // Check tsv resistors
+    for (const auto& tsv : circuit.mTsvResistors) {
+        if (tsv.mR == 0.0) {
+            shorts.push_back({tsv.mN1, tsv.mN2, tsv.mName, "tsv"});
+        }
+    }
+
     // Check package resistors
     for (const auto& pkg : circuit.mPkgResistors) {
         if (pkg.mR == 0.0) {
@@ -338,6 +370,7 @@ CircuitConnectivityChecker::generateReport(const CircuitGraph& circuit) {
             report << "  Nodes: " << comp.nodes.size() << "\n";
             report << "  Resistors: " << comp.resistors.size() << "\n";
             report << "  Vias: " << comp.vias.size() << "\n";
+            report << "  Tsvs: " << comp.tsvs.size() << "\n";
             report << "  Package Resistors: " << comp.pkgs.size() << "\n";
             report << "  Current Sources: " << comp.isrcs.size() << "\n";
 

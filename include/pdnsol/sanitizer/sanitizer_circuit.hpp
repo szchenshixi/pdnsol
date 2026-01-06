@@ -31,6 +31,7 @@ class CircuitConnectivityChecker {
             std::vector<IdString> nodes;
             std::vector<IdString> resistors;
             std::vector<IdString> vias;
+            std::vector<IdString> tsvs;
             std::vector<IdString> pkgs;
             std::vector<IdString> vsrcs;
             std::vector<IdString> isrcs;

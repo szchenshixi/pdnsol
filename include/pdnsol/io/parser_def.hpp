@@ -321,7 +321,7 @@ class CoarsePdnBuilder3D {
     ConductanceGrid3D& getOrCreateTsvGrid(int netIndex, int lb, int lt);
     ConductanceGrid3D& getOrCreateGrid(int netIndex, int lb, int lt, bool isTsv);
 
-    static std::uint64_t makeViaKey(int netIndex, int lb, int lt);
+    static std::uint64_t makeGridKey(int netIndex, int lb, int lt);
 
     // -----------------------------------------------------------------
     // CircuitGraph construction

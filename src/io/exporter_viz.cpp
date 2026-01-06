@@ -55,7 +55,8 @@ void exportCircuitGraphForVizJson(const CircuitGraph& c,
     j["edges"] = Json::array();
     j["edges"].get_ptr<Json::array_t*>()->reserve(
       c.mMetalResistors.size() + c.mViaResistors.size() +
-      c.mPkgResistors.size() + c.mVsrcs.size() + c.mIsrcs.size());
+      c.mTsvResistors.size() + c.mPkgResistors.size() + c.mVsrcs.size() +
+      c.mIsrcs.size());
 
     // Metal resistors (layer known from res.mNet)
     for (const auto& r : c.mMetalResistors) {
