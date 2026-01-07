@@ -7,8 +7,8 @@
 
 #include "pdnsol/common.hpp"
 #include "pdnsol/struct/circuit.hpp"
+#include "pdnsol/struct/net_filter.hpp"
 #include "pdnsol/utils/id_string.hpp"
-#include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
 using Json = nlohmann::json;
@@ -34,7 +34,8 @@ class CircuitDecorator {
     struct CurrentRegion {
         RectRegion rect;
         IdString   layer;
-        IdString::Map<ScalarType>  netCurrents; // net name -> total current in Amp
+        IdString::Map<ScalarType>
+          netCurrents; // net name -> total current in Amp
     };
 
     struct VoltageRegion {
@@ -44,12 +45,14 @@ class CircuitDecorator {
     };
 
   public:
-    CircuitDecorator(CircuitGraph& inGraph, const DecoratorConfig& cfg);
+    CircuitDecorator(CircuitGraph& inGraph, const DecoratorConfig& cfg,
+                     const NetFilter& netFilter = NetFilter{});
     void build();
 
   private:
     CircuitGraph&   mIn;
     DecoratorConfig mCfg;
+    NetFilter       mNetFilter;
 
     // -------------------------------------------------------------------------
     // High-Level Entries

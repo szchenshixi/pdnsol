@@ -41,6 +41,7 @@ int main(int argc, char** argv) {
     // ============================================================
     // 1) Technology Database Setup
     // ============================================================
+
     TechDatabase techDb;
     const Json&  techConfigJ = configJ["tech"];
 
@@ -128,36 +129,48 @@ int main(int argc, char** argv) {
         perLayerGridRes[layerName] = LayerGridResolution{strideX, strideY};
     }
 
-    CoarsePdnBuilder3D builder(techDb,
-                               defaultGridRes,
-                               perLayerGridRes,
-                               powerNets,
-                               groundNets,
-                               layerOrder);
-
-    // ============================================================
-    // 4) Circuit Construction
-    // ============================================================
-
     const Json&        fileConfigJ    = configJ["file"];
     const std::string& defPath        = fileConfigJ["def_path"];
     const std::string& currentSrcPath = fileConfigJ["current_src_path"];
     const std::string& voltageSrcPath = fileConfigJ["voltage_src_path"];
     const std::string& bumpLayer      = simConfigJ["bump_layer"];
 
-    CircuitGraph circ;
-    if (!builder.buildCoarsePdnFromDef(defPath, circ)) {
+    // ============================================================
+    // 4) Circuit Construction
+    // ============================================================
+
+    // Option1: Select the nets
+    // pdnsol::NetFilter f;
+    // f.includePower  = true;
+    // f.includeGround = true; // include both if you want both graphs
+
+    // Option2: Select the specific nets
+    pdnsol::NetFilter netFilter;
+    netFilter.include = {"VSS"};
+
+    CircuitGraph       circ;
+    CoarsePdnBuilder3D builder(techDb,
+                               defaultGridRes,
+                               perLayerGridRes,
+                               powerNets,
+                               groundNets,
+                               layerOrder);
+    if (!builder.buildCoarsePdnFromDef(defPath, circ, netFilter)) {
         PDN_FATAL("Failed to build 3D coarse PDN graph");
     }
     circ.purgeParallelElements();
     circ.purgeIsolatedNodes();
+
+    // ============================================================
+    // 5) Aggregate current/voltage sources into the circuits
+    // ============================================================
 
     DecoratorConfig decoratorConfig;
     decoratorConfig.currentConfigPath         = currentSrcPath;
     decoratorConfig.voltageConfigPath         = voltageSrcPath;
     decoratorConfig.voltageSourceLandingLayer = bumpLayer;
     decoratorConfig.voltageSources            = std::move(vsrcs);
-    CircuitDecorator decorator(circ, decoratorConfig);
+    CircuitDecorator decorator(circ, decoratorConfig, netFilter);
     decorator.build();
 
     PDN_INFO("3D Coarse PDN graph built");
@@ -180,9 +193,11 @@ int main(int argc, char** argv) {
     std::string                report        = checker.generateReport(circ);
     std::cout << report;
 
-    // Next steps:
+    // ============================================================
+    // 6) Construct the modal nodal analysis (MNA) linear system
+    // ============================================================
     //   - Build sparse conductance matrix G from mMetalResistors +
-    //   mViaResistors.
+    //   mViaResistors + mTsvResistors + mPkgResistors
     //   - Treat bump nodes as Dirichlet BCs (VDD/VSS).
     //   - Aggregate load currents per (net,layer,tile) node into I vector.
     //   - Solve G V = I (e.g., with CG/PCG) and extract coarse IR-drop
@@ -192,20 +207,21 @@ int main(int argc, char** argv) {
         PERF_STATS("Solving coarse circuit");
         PDN_INFO("Starting solving coarse circuit with %'d nodes",
                  circ.mNodes.size());
-        // 1. Stamp the MNA system
-        MNASystem           mna = assembleMNA(circ);
-        // 2. Solve the MNA system
-        MNASolution         sol = solveMNA(mna);
-        // 3. Build heatmap for the chosen net(s)
+        // 0. Configure the heatmap visualization
         IRDropHeatmapConfig heatmapCfg;
         heatmapCfg.vddNominal = 0.8;
         heatmapCfg.vssNominal = 0.0;
         heatmapCfg.width      = 32;
         heatmapCfg.height     = 32;
+        // 1. Stamp the MNA system
+        MNASystem    mna      = assembleMNA(circ);
+        // 2. Solve the MNA system
+        MNASolution  sol      = solveMNA(mna);
+        // 3. Build heatmap for the chosen net(s)
         HeatmapByNet hm = buildIRDropHeatmapsMultiNet(circ, sol, heatmapCfg);
         // 4. Export
-        writeAllHeatmapsToPng(hm, "work_coarse", /*useMaxValue=*/true);
-        // 5. (Optional) Export a model layout plot
+        writeAllHeatmapsToPng(hm, "work", /*useMaxValue=*/true);
+        // 5. (Optional) Export a model layout
         exportCircuitGraphForVizJson(circ, "viz_output/viz.json");
     }
 

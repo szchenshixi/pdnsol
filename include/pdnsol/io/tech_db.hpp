@@ -51,13 +51,6 @@ struct TechViaGeom {
     int cols             = 1; // ROWCOL
 };
 
-// TSV geometry extension point (minimal, but allows you to fill later)
-// struct TechTsvGeom {
-//     IdString name;
-//     double   diameter_um = 0.0;
-//     double   height_um   = 0.0;
-// };
-
 class TechDatabase {
   public:
     // Metal layers

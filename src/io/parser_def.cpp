@@ -78,17 +78,6 @@ static std::vector<std::string> tokenizeDef(const std::string& s) {
     return tokens;
 }
 
-static bool stringListContainsId(const std::vector<std::string>& names,
-                                 const IdString&                 id) {
-    for (const std::string& s : names) {
-        const std::string cleaned = stripDefQuotes(s);
-        if (IdString(cleaned) == id) {
-            return true;
-        }
-    }
-    return false;
-}
-
 // -----------------------------------------------------------------------------
 // ConductanceGrid2D implementation
 // -----------------------------------------------------------------------------
@@ -223,18 +212,22 @@ int CoarsePdnBuilder3D::encodeNetLayer(int netIndex, int layerIndex) const {
 bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string& defPath,
                                                CircuitGraph&      outGraph) {
     // Backwards compatible: no filtering => all PDN nets
-    NetBuildFilter f;
+    NetFilter f;
     return buildCoarsePdnFromDef(defPath, outGraph, f);
 }
 
-bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string&    defPath,
-                                               CircuitGraph&         outGraph,
-                                               const NetBuildFilter& filter) {
+bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string& defPath,
+                                               CircuitGraph&      outGraph,
+                                               const NetFilter&   filter) {
     // Ensure we start clean for each DEF
     resetForNewBuild();
 
     // Make sure output is clean too
     outGraph = CircuitGraph{};
+
+    // Precompute selection once and keep it active during parsing/recording.
+    const std::vector<int> netIndices = selectNetIndices(filter);
+    setNetSelectedMask(netIndices);
 
     if (!parseDefGeometry(defPath)) {
         std::cerr << "ERROR: Failed to parse geometry from DEF: " << defPath
@@ -252,14 +245,13 @@ bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string&    defPath,
 
     finalizeRecordedPdnGeometry();
 
-    const std::vector<int> netIndices = selectNetIndices(filter);
     buildCircuitGraph(outGraph, netIndices);
     return true;
 }
 
 bool CoarsePdnBuilder3D::buildCoarsePdnGraphsByNetFromDef(
   const std::string& defPath, IdString::Map<CircuitGraph>& outGraphs,
-  const NetBuildFilter& filter) {
+  const NetFilter& filter) {
 
     resetForNewBuild();
     outGraphs.clear();
@@ -410,7 +402,7 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
                       commonDivisorX);
         }
         if (mLayerGridRes[l].sy % commonDivisorY != 0) {
-            PDN_FATAL("Tile size sx=%d is not an integer multiple of common "
+            PDN_FATAL("Tile size sy=%d is not an integer multiple of common "
                       "divisor %d",
                       mLayerGridRes[l].sy,
                       commonDivisorY);
@@ -526,7 +518,7 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
 
     PDN_INFO("Grid Configuration:");
     PDN_INFO("  Base tile:    %.2f x %.2fum", baseTileSizeX, baseTileSizeY);
-    PDN_INFO("  Base grid:    %d x %d tiles", baseNx, baseNx);
+    PDN_INFO("  Base grid:    %d x %d tiles", baseNx, baseNy);
     PDN_INFO("  Original die: %.2f x %.2fum", dieWidth, dieHeight);
     PDN_INFO("  Padded die:   %.2f x %.2fum", paddedDieWidth, paddedDieHeight);
 
@@ -550,17 +542,29 @@ void CoarsePdnBuilder3D::resetForNewBuild() {
     m3DGridLookup.clear();
     mRecordedStripes.clear();
     mRecordedVias.clear();
+    mRecordedTsvs.clear();
+    mNetSelectedMask.clear();
+}
+
+void CoarsePdnBuilder3D::setNetSelectedMask(
+  const std::vector<int>& netIndices) {
+    mNetSelectedMask.assign(static_cast<std::size_t>(mNumNets), 0);
+    for (int n : netIndices) {
+        if (n >= 0 && n < mNumNets) {
+            mNetSelectedMask[static_cast<std::size_t>(n)] = 1;
+        }
+    }
 }
 
 std::vector<int>
-CoarsePdnBuilder3D::selectNetIndices(const NetBuildFilter& filter) const {
+CoarsePdnBuilder3D::selectNetIndices(const NetFilter& filter) const {
     // Optional: warn if user requested unknown nets
     for (const std::string& s : filter.include) {
         IdString id(stripDefQuotes(s));
         if (mNetByName.find(id) == mNetByName.end()) {
-            PDN_WARN(
-              "Net filter requested '%s' but it is not a registered PDN net",
-              id.c_str());
+            PDN_WARN("Net filter requested '%s' but it is not a "
+                     "registered PDN net",
+                     id.c_str());
         }
     }
 
@@ -568,20 +572,17 @@ CoarsePdnBuilder3D::selectNetIndices(const NetBuildFilter& filter) const {
     out.reserve(static_cast<std::size_t>(mNumNets));
 
     for (const NetInfo& ni : mNetByIndex) {
-        if (ni.isPower && !filter.includePower) continue;
-        if (ni.isGround && !filter.includeGround) continue;
-
-        if (!filter.include.empty() &&
-            !stringListContainsId(filter.include, ni.name))
-            continue;
-
-        if (!filter.exclude.empty() &&
-            stringListContainsId(filter.exclude, ni.name))
-            continue;
+        if (!filter.allows(ni.name, ni.isPower, ni.isGround)) continue;
 
         out.push_back(ni.index);
     }
     return out;
+}
+
+bool CoarsePdnBuilder3D::isNetSelected(int netIndex) const noexcept {
+    if (mNetSelectedMask.empty()) return true;
+    if (netIndex < 0 || netIndex >= mNumNets) return false;
+    return mNetSelectedMask[static_cast<std::size_t>(netIndex)] != 0;
 }
 
 // -----------------------------------------------------------------------------
@@ -778,7 +779,8 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
             currentNetName = stripDefQuotes(tokens[1]);
 
             auto it = mNetByName.find(IdString::tryLookup(currentNetName));
-            currentNetIsPdn = (it != mNetByName.end());
+            currentNetIsPdn =
+              (it != mNetByName.end()) && isNetSelected(it->second.index);
         } else {
             currentNetName.clear();
             currentNetIsPdn = false;
@@ -1045,7 +1047,8 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
 
 //         if (tok == ";") {
 //             // End of this PIN definition
-//             if (mPinParseState.isPowerOrGround && mPinParseState.hasLocation
+//             if (mPinParseState.isPowerOrGround &&
+//             mPinParseState.hasLocation
 //             &&
 //                 mPinParseState.netName.valid()) {
 //                 auto it = mNetByName.find(mPinParseState.netName);
@@ -1314,6 +1317,7 @@ void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
     auto netIt = mNetByName.find(IdString::tryLookup(netName));
     if (netIt == mNetByName.end()) return;
     const int netIndex = netIt->second.index;
+    if (!isNetSelected(netIndex)) return;
 
     const TechVia* via = mTechDb.getVia(IdString::tryLookup(viaName));
     if (!via) return;
@@ -1342,19 +1346,23 @@ void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
 }
 
 // void CoarsePdnBuilder3D::addStripeRectangle(const std::string& netName,
-//                                             const std::string& layerName,
-//                                             int x0Dbu, int y0Dbu, int x1Dbu,
-//                                             int y1Dbu) {
+//                                             const std::string&
+//                                             layerName, int x0Dbu, int
+//                                             y0Dbu, int x1Dbu, int y1Dbu)
+//                                             {
 //     auto netIt = mNetByName.find(IdString::tryLookup(netName));
 //     if (netIt == mNetByName.end()) return;
 //     int netIndex = netIt->second.index;
 
 //     auto layerIdxIt =
-//     mLayerNameToIndex.find(IdString::tryLookup(layerName)); if (layerIdxIt
-//     == mLayerNameToIndex.end()) return; int layerIndex = layerIdxIt->second;
+//     mLayerNameToIndex.find(IdString::tryLookup(layerName)); if
+//     (layerIdxIt
+//     == mLayerNameToIndex.end()) return; int layerIndex =
+//     layerIdxIt->second;
 
 //     const TechLayer* layer =
-//     mTechDb.getLayer(IdString::tryLookup(layerName)); if (!layer) return;
+//     mTechDb.getLayer(IdString::tryLookup(layerName)); if (!layer)
+//     return;
 
 //     // Convert to µm
 //     double x0 = static_cast<double>(x0Dbu) / mDbuPerMicron;
@@ -1396,9 +1404,11 @@ void CoarsePdnBuilder3D::accumulateHorizontalStripe(ConductanceGrid2D& grid,
 
     // Rows [jStart..jEnd] where band intersects [y0,y1]
     // int jStart =
-    //   clamp(static_cast<int>(std::floor((y0 - grid.yMin) / dy)), 0, ny - 1);
+    //   clamp(static_cast<int>(std::floor((y0 - grid.yMin) / dy)), 0, ny -
+    //   1);
     // int jEnd =
-    //   clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 0, ny - 1);
+    //   clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 0, ny -
+    //   1);
     // Representative row
     int iy = representativeRow(grid, y0, y1);
 
@@ -1440,9 +1450,11 @@ void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
 
     // Columns [iStart..iEnd]
     // int iStart =
-    //   clamp(static_cast<int>(std::floor((x0 - grid.xMin) / dx)), 0, nx - 1);
+    //   clamp(static_cast<int>(std::floor((x0 - grid.xMin) / dx)), 0, nx -
+    //   1);
     // int iEnd =
-    //   clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 0, nx - 1);
+    //   clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 0, nx -
+    //   1);
     int ix = representativeCol(grid, x0, x1);
 
     // Horizontal boundaries [lStart..lEnd], 1 <= l <= ny-1
@@ -1476,6 +1488,7 @@ void CoarsePdnBuilder3D::recordStripeRectangle(const std::string& netName,
     auto netIt = mNetByName.find(IdString::tryLookup(netName));
     if (netIt == mNetByName.end()) return;
     const int netIndex = netIt->second.index;
+    if (!isNetSelected(netIndex)) return;
 
     auto layerIdxIt = mLayerNameToIndex.find(IdString::tryLookup(layerName));
     if (layerIdxIt == mLayerNameToIndex.end()) return;
@@ -1505,8 +1518,8 @@ static std::string extractNetNameFromInstance(const std::string& instName,
     // Expected pattern (example):
     //   U_<macroName>_<netName>_<number>
     //
-    // We do a case-insensitive search for <macroName>, then take the substring
-    // between the macro and the final "_<digits>" suffix.
+    // We do a case-insensitive search for <macroName>, then take the
+    // substring between the macro and the final "_<digits>" suffix.
 
     auto toLower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
@@ -1523,7 +1536,8 @@ static std::string extractNetNameFromInstance(const std::string& instName,
         return "";
     }
 
-    // Find macro name in the instance (case-insensitive), starting after "U_".
+    // Find macro name in the instance (case-insensitive), starting after
+    // "U_".
     const std::size_t searchStart = 2;
     const std::size_t macroPos    = instLower.find(macroLower, searchStart);
     if (macroPos == std::string::npos) return "";
@@ -1582,6 +1596,7 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
         return;
     }
     const int netIndex = netIt->second.index;
+    if (!isNetSelected(netIndex)) return;
 
     // Resolve layers
     auto blIt = mLayerNameToIndex.find(tsv->bottomLayer);
@@ -1655,12 +1670,14 @@ std::uint64_t CoarsePdnBuilder3D::makeGridKey(int netIndex, int lb, int lt) {
 // CircuitGraph construction
 // -----------------------------------------------------------------------------
 void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
-    if (mRecordedStripes.empty() && mRecordedVias.empty()) {
+    if (mRecordedStripes.empty() && mRecordedVias.empty() &&
+        mRecordedTsvs.empty()) {
         return;
     }
 
     // ---------------------------------------------------------------------
-    // 0) Build a per-(net,layer) spatial lookup of stripes on the coarse tiles
+    // 0) Build a per-(net,layer) spatial lookup of stripes on the coarse
+    // tiles
     // ---------------------------------------------------------------------
     struct StripeSpatialIndex {
         int                           nx = 0;
@@ -1772,9 +1789,9 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
 
     // Find the tiles index for a given via/tsv coordinate
     auto allocateEndpoint = [&](int netIndex,
-                                   int layerIndex,
-                                   int xDbu,
-                                   int yDbu) -> std::pair<int, int> {
+                                int layerIndex,
+                                int xDbu,
+                                int yDbu) -> std::pair<int, int> {
         const ConductanceGrid2D& g = m2DGrids[netIndex][layerIndex];
 
         const double x_um = static_cast<double>(xDbu) / mDbuPerMicron;
@@ -1785,8 +1802,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         const std::vector<int>& candidates =
           stripeIndex[netIndex][layerIndex].at(ixRaw, iyRaw);
 
-        // Find best horizontal stripe (closest centerline) and best vertical
-        // stripe.
+        // Find best horizontal stripe (closest centerline) and best
+        // vertical stripe.
         int       bestH      = -1;
         long long bestHDist  = std::numeric_limits<long long>::max();
         long long bestHWidth = std::numeric_limits<long long>::max();
@@ -1815,8 +1832,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
             const bool      isHorizontal = (dx >= dy);
 
             if (isHorizontal) {
-                // distance to horizontal stripe centerline in y, in "2*DBU"
-                // units
+                // distance to horizontal stripe centerline in y, in
+                // "2*DBU" units
                 const long long dist =
                   std::llabs(2LL * static_cast<long long>(yDbu) -
                              (static_cast<long long>(s.y0) + s.y1));
@@ -1897,7 +1914,6 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
     // Free memory since I don't need the raw records after discretization
     mRecordedStripes.clear();
     mRecordedVias.clear();
-    mRecordedTsvs.clear();
     mRecordedTsvs.clear();
 }
 
@@ -2120,7 +2136,8 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
 }
 
 // -----------------------------------------------------------------------------
-// Rect & VIA token parsing helpers (currently unused, but kept for future use)
+// Rect & VIA token parsing helpers (currently unused, but kept for future
+// use)
 // -----------------------------------------------------------------------------
 
 bool CoarsePdnBuilder3D::parseRectFromTokens(

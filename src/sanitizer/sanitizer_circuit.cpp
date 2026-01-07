@@ -333,13 +333,13 @@ CircuitConnectivityChecker::findShortCircuits(const CircuitGraph& circuit) {
         }
     }
 
-    // Voltage sources with 0V are effectively shorts
-    for (const auto& vsrc : circuit.mVsrcs) {
-        if (vsrc.mV == 0.0) {
-            shorts.push_back(
-              {vsrc.mFromNode, vsrc.mToNode, vsrc.mName, "vsrc"});
-        }
-    }
+    // Voltage sources with 0V are allowed shorts
+    // for (const auto& vsrc : circuit.mVsrcs) {
+    //     if (vsrc.mV > 0.0) {
+    //         shorts.push_back(
+    //           {vsrc.mFromNode, vsrc.mToNode, vsrc.mName, "vsrc"});
+    //     }
+    // }
 
     return shorts;
 }

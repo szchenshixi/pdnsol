@@ -380,7 +380,7 @@ std::size_t CircuitGraph::purgeIsolatedNodes() {
     using DegreeT = std::uint32_t;
 
     // Degree map for existing nodes only.
-    std::unordered_map<IdString, DegreeT, IdString::Hash> degree;
+    IdString::Map<DegreeT> degree;
     degree.reserve(mNodes.size());
 
     // Assumption: NodeMap is keyed by node name (IdString), matching element

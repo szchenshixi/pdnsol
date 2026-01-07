@@ -9,6 +9,7 @@
 #include "pdnsol/common.hpp"
 #include "pdnsol/io/tech_db.hpp"
 #include "pdnsol/struct/circuit.hpp"
+#include "pdnsol/struct/net_filter.hpp"
 #include "pdnsol/utils/id_string.hpp"
 #include "pdnsol/utils/logging.hpp"
 
@@ -123,18 +124,6 @@ struct NetInfo {
     bool     isGround = false;
 };
 
-// Net selection/filtering for graph construction
-struct NetBuildFilter {
-    // If empty => include all PDN nets registered in the builder
-    std::vector<std::string> include; // e.g. {"VDD", "VDDQ"}
-    // Applied after include
-    std::vector<std::string> exclude; // e.g. {"VSS"}
-
-    // Type filters (handy for "only power nets" or "only ground nets")
-    bool includePower  = true;
-    bool includeGround = true;
-};
-
 struct LayerGridResolution {
     int sx = -1; // Tile size in X direction (um)
     int sy = -1; // Tile size in Y direction (um)
@@ -218,14 +207,15 @@ class CoarsePdnBuilder3D {
                                CircuitGraph&      outGraph);
 
     // Build combined graph but only for nets passing `filter`
-    bool buildCoarsePdnFromDef(const std::string&    defPath,
-                               CircuitGraph&         outGraph,
-                               const NetBuildFilter& filter);
+    bool buildCoarsePdnFromDef(const std::string& defPath,
+                               CircuitGraph&      outGraph,
+                               const NetFilter&   filter);
 
     // Build one CircuitGraph per selected net (net name -> graph)
-    bool buildCoarsePdnGraphsByNetFromDef(
-      const std::string& defPath, IdString::Map<CircuitGraph>& outGraphs,
-      const NetBuildFilter& filter = NetBuildFilter{});
+    bool
+    buildCoarsePdnGraphsByNetFromDef(const std::string&           defPath,
+                                     IdString::Map<CircuitGraph>& outGraphs,
+                                     const NetFilter& filter = NetFilter{});
 
   private:
     // -----------------------------------------------------------------
@@ -247,7 +237,9 @@ class CoarsePdnBuilder3D {
     // Helpers for per-net PDN construction
     // -----------------------------------------------------------------
 
-    std::vector<int> selectNetIndices(const NetBuildFilter& filter) const;
+    std::vector<int> selectNetIndices(const NetFilter& filter) const;
+    bool isNetSelected(int netIndex) const noexcept;
+    void setNetSelectedMask(const std::vector<int>& netIndices);
 
     // -----------------------------------------------------------------
     // Helpers for SPECIALNETS routing
@@ -319,7 +311,8 @@ class CoarsePdnBuilder3D {
 
     ConductanceGrid3D& getOrCreateViaGrid(int netIndex, int lb, int lt);
     ConductanceGrid3D& getOrCreateTsvGrid(int netIndex, int lb, int lt);
-    ConductanceGrid3D& getOrCreateGrid(int netIndex, int lb, int lt, bool isTsv);
+    ConductanceGrid3D& getOrCreateGrid(int netIndex, int lb, int lt,
+                                       bool isTsv);
 
     static std::uint64_t makeGridKey(int netIndex, int lb, int lt);
 
@@ -377,6 +370,9 @@ class CoarsePdnBuilder3D {
 
     // num_nets * num_layers
     int mNumNetLayerComb = 0;
+
+    // Per-build selection mask (size=mNumNets). If empty => treat as "all".
+    std::vector<std::uint8_t> mNetSelectedMask;
 
     // DEF geometry
     double mDbuPerMicron = 1.0;

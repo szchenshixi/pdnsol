@@ -24,9 +24,11 @@ static std::string formatIsrcName(IdString layer, IdString netName,
 }
 
 CircuitDecorator::CircuitDecorator(CircuitGraph&          inGraph,
-                                   const DecoratorConfig& cfg)
+                                   const DecoratorConfig& cfg,
+                                   const NetFilter&       netFilter)
     : mIn(inGraph)
-    , mCfg(cfg) {}
+    , mCfg(cfg)
+    , mNetFilter(netFilter) {}
 
 void CircuitDecorator::build() {
     addCurrentRegionsFromJson(mCfg.currentConfigPath, mIn);
@@ -155,10 +157,36 @@ void CircuitDecorator::addVoltageSourceFromConfig(
 
         if (!(iss >> _ >> xCoord >> yCoord >> netNameStr)) {
             PDN_WARN("Warning: [addVoltageSourceFromConfig] Failed to "
-                     "parse line %d in '%s': '%s",
+                     "parse line %zu in '%s': '%s",
                      lineNo,
                      configFilePath.c_str(),
                      line.c_str());
+            continue;
+        }
+
+        const IdString netNameId(netNameStr);
+
+        // Name-only filter first (cheap, avoids noise)
+        if (!mNetFilter.allowsName(netNameId)) {
+            continue;
+        }
+
+        // If the graph doesn't even contain this net on the landing layer,
+        // and the user is filtering, skip quietly unless explicitly requested
+        const NetId landingNetId = graph.netId(landingLayerId, netNameId);
+        if (!landingNetId) {
+            if (mNetFilter.isAllowAll() ||
+                mNetFilter.explicitlyIncludesName(netNameId)) {
+                PDN_WARN("[addVoltageSourceFromConfig] Net '%s' not found on "
+                         "landing layer '%s'. Skip this source.",
+                         netNameStr.c_str(),
+                         landingLayerStr.c_str());
+            }
+            continue;
+        }
+
+        const NetKey nk = graph.netKey(landingNetId);
+        if (!mNetFilter.allows(nk.netName, nk.isPower, nk.isGround)) {
             continue;
         }
 
@@ -170,14 +198,11 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         const ScalarType voltage  = vsrcProp->second.voltage;  // Volt
         const ScalarType packageR = vsrcProp->second.packageR; // Ohm
 
-        // Convert textual net name from config into IdString.
-        const IdString netNameId(netNameStr);
-
-        // Convert coordinates to internal fixed-point number representation.
+        // Convert coordinates to internal fixed-point number representation
         const Tick xTick = FPN::toRep(xCoord);
         const Tick yTick = FPN::toRep(yCoord);
 
-        // 1) Find the closest PDN node on the landing layer for this net.
+        // 1) Find the closest PDN node on the landing layer for this net
         IdString   closestNodeName;
         const bool found = findClosestNodeOnLayerAndNet(
           netNameId, xTick, yTick, closestNodeName);
@@ -290,13 +315,24 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
                                             double        totalCurrent,
                                             CircuitGraph& graph,
                                             std::size_t   regionIdx) {
+    // Name-only filter first (fast, avoids noisy "missing net" warnings)
+    if (!mNetFilter.allowsName(netName)) return;
+
     // 1) Resolve mNet id
-    const NetId&  netId  = graph.netId(layer, netName);
-    const NetKey& netKey = graph.netKey(netId);
+    const NetId netId = graph.netId(layer, netName);
     if (!netId) {
-        PDN_WARN("No netId for layer=%s, net=%s (skipping current region)",
-                 layer.c_str(),
-                 netName.c_str());
+        if (mNetFilter.isAllowAll() ||
+            mNetFilter.explicitlyIncludesName(netName)) {
+            PDN_WARN("No netId for layer=%s, net=%s (skipping current region)",
+                     layer.c_str(),
+                     netName.c_str());
+        }
+        return;
+    }
+    const NetKey netKey = graph.netKey(netId);
+
+    // Full filter with type info.
+    if (!mNetFilter.allows(netKey.netName, netKey.isPower, netKey.isGround)) {
         return;
     }
 
@@ -324,8 +360,8 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
     if (candidates.empty()) {
         PDN_WARN("No nodes found in region (layer=%s , net=%s) for specified "
                  "rectangle.",
-                 layer,
-                 netName);
+                 layer.c_str(),
+                 netName.c_str());
         return;
     }
 
@@ -337,10 +373,10 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
     }
 
     // 5) Create Isrc entries in graph.mIsrcs
-    bool isPower = netKey.isPower;
+    const bool isPower = netKey.isPower;
     for (std::size_t i = 0; i < candidates.size(); ++i) {
         const double I = nodeCurrents[i];
-        if (std::abs(I) == 0.0) continue; // skip zero
+        if (std::abs(I) <= 0.0) continue; // skip zero
 
         const Node* n = candidates[i].node;
 
