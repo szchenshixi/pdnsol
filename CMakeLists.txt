@@ -42,6 +42,7 @@ add_library(
   src/io/tech_db.cpp
   src/io/exporter_viz.cpp
   src/io/parser_def.cpp
+  src/io/parser_config.cpp
   src/io/parser_utils.cpp
   src/io/parser_spice.cpp
   src/io/parser_spef.cpp

@@ -11,8 +11,6 @@
 #include "pdnsol/utils/id_string.hpp"
 
 namespace pdnsol {
-using Json = nlohmann::json;
-
 struct DecoratorConfig {
     struct VSrcProperty {
         ScalarType voltage;  // Volt

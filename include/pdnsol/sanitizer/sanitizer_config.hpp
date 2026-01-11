@@ -2,9 +2,8 @@
 
 #include <string>
 
-#include <nlohmann/json.hpp>
+#include "pdnsol/common.hpp"
 
 namespace pdnsol {
-using Json = nlohmann::json;
 bool integrityCheck(const Json& configJ, const std::string& filePath);
 } // namespace pdnsol

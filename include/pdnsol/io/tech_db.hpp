@@ -3,6 +3,7 @@
 #include <string_view>
 
 #include "pdnsol/common.hpp"
+#include "pdnsol/utils/id_string.hpp"
 
 namespace pdnsol {
 

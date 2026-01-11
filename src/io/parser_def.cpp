@@ -2108,18 +2108,7 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
                                           .at(ixT, iyT);
 
             std::ostringstream ossName;
-            if (isTsv) {
-                ossName << ni.name.str() << "_TSV" << blName.str() << "_to_"
-                        << tlName.str() << "_B_" << ixB << "_" << iyB << "_T_"
-                        << ixT << "_" << iyT << "_" << tsvCounter++;
-
-                TsvRes tr;
-                tr.name = IdString(ossName.str());
-                tr.n1   = bottomId;
-                tr.n2   = topId;
-                tr.R    = R;
-                graph.mTsvResistors.push_back(std::move(tr));
-            } else {
+            if (!isTsv) {
                 ossName << ni.name.str() << "_VIA_" << blName.str() << "_to_"
                         << tlName.str() << "_B_" << ixB << "_" << iyB << "_T_"
                         << ixT << "_" << iyT << "_" << viaCounter++;
@@ -2130,6 +2119,17 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
                 vr.n2   = topId;
                 vr.R    = R;
                 graph.mViaResistors.push_back(std::move(vr));
+            } else {
+                ossName << ni.name.str() << "_TSV_" << blName.str() << "_to_"
+                        << tlName.str() << "_B_" << ixB << "_" << iyB << "_T_"
+                        << ixT << "_" << iyT << "_" << tsvCounter++;
+
+                TsvRes tr;
+                tr.name = IdString(ossName.str());
+                tr.n1   = bottomId;
+                tr.n2   = topId;
+                tr.R    = R;
+                graph.mTsvResistors.push_back(std::move(tr));
             }
         }
     }

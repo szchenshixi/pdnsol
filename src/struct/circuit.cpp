@@ -301,6 +301,10 @@ void CircuitGraph::ensureAllReferencedNodesExist() {
         addName(res.n1);
         addName(res.n2);
     }
+    for (const auto& res : mTsvResistors) {
+        addName(res.n1);
+        addName(res.n2);
+    }
     for (const auto& res : mPkgResistors) {
         addName(res.n1);
         addName(res.n2);
@@ -326,6 +330,8 @@ bool CircuitGraph::refersToGround() const {
     for (const auto& res : mMetalResistors)
         if (ref0(res.n1) || ref0(res.n2)) return true;
     for (const auto& res : mViaResistors)
+        if (ref0(res.n1) || ref0(res.n2)) return true;
+    for (const auto& res : mTsvResistors)
         if (ref0(res.n1) || ref0(res.n2)) return true;
     for (const auto& res : mPkgResistors)
         if (ref0(res.n1) || ref0(res.n2)) return true;
@@ -353,6 +359,7 @@ void CircuitGraph::validateReadyForMna() const {
 
     for (const auto& res : mMetalResistors) checkR(res.name, res.R);
     for (const auto& res : mViaResistors) checkR(res.name, res.R);
+    for (const auto& res : mTsvResistors) checkR(res.name, res.R);
     for (const auto& res : mPkgResistors) checkR(res.name, res.R);
 }
 
@@ -360,6 +367,7 @@ void CircuitGraph::purgeParallelElements() {
     // 1. Resistive network (metal, via, package)
     mergeParallelResistors(mMetalResistors);
     mergeParallelResistors(mViaResistors);
+    mergeParallelResistors(mTsvResistors);
     mergeParallelResistors(mPkgResistors);
 
     // 2. Current sources
@@ -404,6 +412,10 @@ std::size_t CircuitGraph::purgeIsolatedNodes() {
         bumpIfPresent(e.n2);
     }
     for (const auto& e : mViaResistors) {
+        bumpIfPresent(e.n1);
+        bumpIfPresent(e.n2);
+    }
+    for (const auto& e : mTsvResistors) {
         bumpIfPresent(e.n1);
         bumpIfPresent(e.n2);
     }

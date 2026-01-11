@@ -38,7 +38,7 @@ inline bool listContainsId(const std::vector<std::string>& names,
 // - exclude is applied after include.
 // - includePower/includeGround can be used to keep only power or only ground
 struct NetFilter {
-    std::vector<std::string> include; // e.g. {"VDD", "\"VDDQ\""}
+    std::vector<std::string> include; // e.g. {"VDD", "VDD_MEM"}
     std::vector<std::string> exclude; // e.g. {"VSS"}
 
     bool includePower  = true;

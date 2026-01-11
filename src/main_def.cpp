@@ -174,14 +174,15 @@ int main(int argc, char** argv) {
     decorator.build();
 
     PDN_INFO("3D Coarse PDN graph built");
-    PDN_INFO("Nodes:      %d", circ.mNodes.size());
-    PDN_INFO("MetalRes:   %d", circ.mMetalResistors.size());
-    PDN_INFO("ViaRes:     %d", circ.mViaResistors.size());
-    PDN_INFO("PkgRes:     %d", circ.mPkgResistors.size());
+    PDN_INFO("Nodes:      %zu", circ.mNodes.size());
+    PDN_INFO("MetalRes:   %zu", circ.mMetalResistors.size());
+    PDN_INFO("ViaRes:     %zu", circ.mViaResistors.size());
+    PDN_INFO("TsvRes:     %zu", circ.mTsvResistors.size());
+    PDN_INFO("PkgRes:     %zu", circ.mPkgResistors.size());
 
     PDN_INFO("Current/Voltage sources embedded");
-    PDN_INFO("Current sources:      %d", circ.mIsrcs.size());
-    PDN_INFO("Voltage sources:      %d", circ.mVsrcs.size());
+    PDN_INFO("Current sources:      %zu", circ.mIsrcs.size());
+    PDN_INFO("Voltage sources:      %zu", circ.mVsrcs.size());
 
     // Create checker instance
     CircuitConnectivityChecker checker;
