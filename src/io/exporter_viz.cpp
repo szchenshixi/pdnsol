@@ -13,8 +13,8 @@ static inline std::string layerOfNode(const CircuitGraph& c,
     auto it = c.mNodes.find(nid);
     if (it == c.mNodes.end()) return "UNKNOWN_NODE";
     const Node& n = it->second;
-    if (!n.mNet) return "UNASSIGNED_NET";
-    auto k = c.netKey(n.mNet);
+    if (!n.net) return "UNASSIGNED_NET";
+    auto k = c.netKey(n.net);
     return k.layer.str();
 }
 
@@ -32,18 +32,18 @@ void exportCircuitGraphForVizJson(const CircuitGraph& c,
         bool        isPower = false, isGround = false;
         int         netId = -1;
 
-        if (node.mNet) {
-            auto k   = c.netKey(node.mNet);
+        if (node.net) {
+            auto k   = c.netKey(node.net);
             layer    = k.layer.c_str();
             net      = k.netName.c_str();
             isPower  = k.isPower;
             isGround = k.isGround;
-            netId    = node.mNet.get();
+            netId    = node.net.get();
         }
 
         j["nodes"].push_back({{"id", nodeId.str()},
-                              {"x_um", FPN::fromRep(node.mX)},
-                              {"y_um", FPN::fromRep(node.mY)},
+                              {"x_um", FPN::fromRep(node.x)},
+                              {"y_um", FPN::fromRep(node.y)},
                               {"net_id", netId},
                               {"layer", layer},
                               {"net", net},
@@ -61,68 +61,68 @@ void exportCircuitGraphForVizJson(const CircuitGraph& c,
     // Metal resistors (layer known from res.mNet)
     for (const auto& r : c.mMetalResistors) {
         std::string layer = "UNASSIGNED_NET";
-        if (r.mNet) layer = c.netKey(r.mNet).layer.c_str();
+        if (r.net) layer = c.netKey(r.net).layer.c_str();
 
-        j["edges"].push_back({{"id", r.mName.c_str()},
+        j["edges"].push_back({{"id", r.name.c_str()},
                               {"type", "metal"},
                               {"layer", layer},
-                              {"n1", r.mN1.c_str()},
-                              {"n2", r.mN2.c_str()},
-                              {"r", r.mR}});
+                              {"n1", r.n1.c_str()},
+                              {"n2", r.n2.c_str()},
+                              {"r", r.R}});
     }
 
     // Vias (layer inferred from node nets)
     for (const auto& v : c.mViaResistors) {
-        j["edges"].push_back({{"id", v.mName.c_str()},
+        j["edges"].push_back({{"id", v.name.c_str()},
                               {"type", "via"},
-                              {"n1", v.mN1.c_str()},
-                              {"n2", v.mN2.c_str()},
-                              {"r", v.mR}});
+                              {"n1", v.n1.c_str()},
+                              {"n2", v.n2.c_str()},
+                              {"r", v.R}});
     }
 
     // Tsvs (layer inferred from node nets)
     for (const auto& v : c.mTsvResistors) {
-        j["edges"].push_back({{"id", v.mName.c_str()},
+        j["edges"].push_back({{"id", v.name.c_str()},
                               {"type", "tsv"},
-                              {"n1", v.mN1.c_str()},
-                              {"n2", v.mN2.c_str()},
-                              {"r", v.mR}});
+                              {"n1", v.n1.c_str()},
+                              {"n2", v.n2.c_str()},
+                              {"r", v.R}});
     }
 
     // Package resistors
     for (const auto& p : c.mPkgResistors) {
-        j["edges"].push_back({{"id", p.mName.c_str()},
+        j["edges"].push_back({{"id", p.name.c_str()},
                               {"type", "pkg"},
-                              {"n1", p.mN1.c_str()},
-                              {"n2", p.mN2.c_str()},
-                              {"r", p.mR}});
+                              {"n1", p.n1.c_str()},
+                              {"n2", p.n2.c_str()},
+                              {"r", p.R}});
     }
 
     // Voltage sources
     for (const auto& s : c.mVsrcs) {
-        const char* subtype = (s.mType == Vsrc::GLOBAL)    ? "global"
-                              : (s.mType == Vsrc::VIA)     ? "via"
-                              : (s.mType == Vsrc::PACKAGE) ? "package"
+        const char* subtype = (s.type == Vsrc::GLOBAL)    ? "global"
+                              : (s.type == Vsrc::VIA)     ? "via"
+                              : (s.type == Vsrc::PACKAGE) ? "package"
                                                            : "other";
 
-        j["edges"].push_back({{"id", s.mName.c_str()},
+        j["edges"].push_back({{"id", s.name.c_str()},
                               {"type", "vsrc"},
                               {"subtype", subtype},
-                              {"n1", s.mFromNode.c_str()},
-                              {"n2", s.mToNode.c_str()},
-                              {"v", s.mV}});
+                              {"n1", s.fromNode.c_str()},
+                              {"n2", s.toNode.c_str()},
+                              {"v", s.V}});
     }
 
     // Current sources
     for (const auto& s : c.mIsrcs) {
-        const char* subtype = (s.mType == Isrc::IB) ? "iB" : "other";
+        const char* subtype = (s.type == Isrc::IB) ? "iB" : "other";
 
-        j["edges"].push_back({{"id", s.mName.c_str()},
+        j["edges"].push_back({{"id", s.name.c_str()},
                               {"type", "isrc"},
                               {"subtype", subtype},
-                              {"n1", s.mFromNode.c_str()},
-                              {"n2", s.mToNode.c_str()},
-                              {"i", s.mI}});
+                              {"n1", s.fromNode.c_str()},
+                              {"n2", s.toNode.c_str()},
+                              {"i", s.I}});
     }
 
     std::filesystem::path out(outPath);

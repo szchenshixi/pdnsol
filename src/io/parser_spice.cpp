@@ -227,12 +227,12 @@ void parseCommentMeta(
         st.viaToNet      = -1;
 
         SectionMeta meta;
-        meta.mType    = IdString("layer");
-        meta.mName    = IdString(layerNameStr);
-        meta.mNet     = IdString(netNameStr);               // textual net name
-        meta.mFromNet = IdString(std::to_string(netIndex)); // store index here
-        meta.mToNet   = IdString("");                       // unused for layer
-        meta.mRaw     = content;
+        meta.type    = IdString("layer");
+        meta.name    = IdString(layerNameStr);
+        meta.net     = IdString(netNameStr);               // textual net name
+        meta.fromNet = IdString(std::to_string(netIndex)); // store index here
+        meta.toNet   = IdString("");                       // unused for layer
+        meta.raw     = content;
         bool  isPwr = (netNameStr == "VDD"); // Hard coded for IBMPG benchmark
         bool  isGnd = (netNameStr == "GND"); // Hard coded for IBMPG benchmark
         NetId netId = circ.registerNet(
@@ -274,12 +274,12 @@ void parseCommentMeta(
         st.viaToNet   = toNet;
 
         SectionMeta meta;
-        meta.mType    = IdString("vias");
-        meta.mName    = IdString(""); // no explicit name
-        meta.mNet     = IdString(""); // unused
-        meta.mFromNet = IdString(std::to_string(fromNet));
-        meta.mToNet   = IdString(std::to_string(toNet));
-        meta.mRaw     = content;
+        meta.type    = IdString("vias");
+        meta.name    = IdString(""); // no explicit name
+        meta.net     = IdString(""); // unused
+        meta.fromNet = IdString(std::to_string(fromNet));
+        meta.toNet   = IdString(std::to_string(toNet));
+        meta.raw     = content;
         circ.mSections.push_back(std::move(meta));
         return;
     }
@@ -321,33 +321,33 @@ void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
     if (st.current == SectionKind::VIA_SECTION) {
         // Via implemented as resistor
         ViaRes via;
-        via.mName = IdString(name);
-        via.mN1   = pn1.id;
-        via.mN2   = pn2.id;
-        via.mR    = R;
+        via.name = IdString(name);
+        via.n1   = pn1.id;
+        via.n2   = pn2.id;
+        via.R    = R;
         circ.mViaResistors.push_back(std::move(via));
     } else if (st.current == SectionKind::METAL_LAYER) {
         // On-chip metal
         MetalRes mr;
-        mr.mName = IdString(name);
-        mr.mN1   = pn1.id;
-        mr.mN2   = pn2.id;
+        mr.name = IdString(name);
+        mr.n1   = pn1.id;
+        mr.n2   = pn2.id;
 
         int32_t netIdx = st.layerNetIndex;
         if (netIdx < 0) {
             if (pn1.netIndex >= 0) netIdx = pn1.netIndex;
             else if (pn2.netIndex >= 0) netIdx = pn2.netIndex;
         }
-        mr.mNet = NetId(netIdx);
-        mr.mR   = R;
+        mr.net = NetId(netIdx);
+        mr.R   = R;
         circ.mMetalResistors.push_back(std::move(mr));
     } else {
         // Outside known layer/via sections -> treat as package resistor
         PkgRes pr;
-        pr.mName = IdString(name);
-        pr.mN1   = pn1.id;
-        pr.mN2   = pn2.id;
-        pr.mR    = R;
+        pr.name = IdString(name);
+        pr.n1   = pn1.id;
+        pr.n2   = pn2.id;
+        pr.R    = R;
         circ.mPkgResistors.push_back(std::move(pr));
     }
 }
@@ -376,20 +376,20 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
     if (st.current == SectionKind::VIA_SECTION) {
         // DEBUG: Vias implemented as a constant resistor no mater what
         ViaRes src;
-        src.mName = IdString(name);
-        src.mN1   = pn1.id;
-        src.mN2   = pn2.id;
-        src.mR    = 0.1; // Ohm
+        src.name = IdString(name);
+        src.n1   = pn1.id;
+        src.n2   = pn2.id;
+        src.R    = 0.1; // Ohm
         circ.mViaResistors.push_back(std::move(src));
         return;
     }
 
     Vsrc src;
-    src.mName     = IdString(name);
-    src.mFromNode = pn1.id;
-    src.mToNode   = pn2.id;
-    src.mV        = V;
-    src.mType     = Vsrc::OTHER;
+    src.name     = IdString(name);
+    src.fromNode = pn1.id;
+    src.toNode   = pn2.id;
+    src.V        = V;
+    src.type     = Vsrc::OTHER;
     bool connectsToGnd =
       (pn1.id == IdString("GND") || pn2.id == IdString("GND"));
 
@@ -398,11 +398,11 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
 
     if (!seenGlobalVsrc && connectsToGnd && std::fabs(V) > 0.0) {
         // First non-zero Vsrc tied to ground => treat as global VDD
-        src.mType      = Vsrc::GLOBAL;
+        src.type      = Vsrc::GLOBAL;
         seenGlobalVsrc = true;
     } else if (touchesPackage) {
         // Tie between package node(s) and something else
-        src.mType = Vsrc::PACKAGE;
+        src.type = Vsrc::PACKAGE;
     }
 
     circ.mVsrcs.push_back(std::move(src));
@@ -429,16 +429,16 @@ void parseCurrentSource(const std::vector<std::string>& tokens,
     circ.ensureNode(pn2.id, pn2.netIndex, pn2.x, pn2.y);
 
     Isrc src;
-    src.mName     = IdString(name);
-    src.mFromNode = pn1.id;
-    src.mToNode   = pn2.id;
-    src.mI        = I;
+    src.name     = IdString(name);
+    src.fromNode = pn1.id;
+    src.toNode   = pn2.id;
+    src.I        = I;
 
     std::string lowerName = toLower(name);
     if (startsWithIgnoreCase(lowerName, "ib")) {
-        src.mType = Isrc::IB;
+        src.type = Isrc::IB;
     } else {
-        src.mType = Isrc::OTHER;
+        src.type = Isrc::OTHER;
     }
 
     circ.mIsrcs.push_back(std::move(src));

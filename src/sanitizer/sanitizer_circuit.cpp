@@ -22,49 +22,49 @@ void CircuitConnectivityChecker::buildGraph(const CircuitGraph& circuit) {
 
     // Add edges from metal resistors
     for (const auto& res : circuit.mMetalResistors) {
-        if (nodeGraph.count(res.mN1) && nodeGraph.count(res.mN2)) {
-            nodeGraph[res.mN1].neighbors.insert(res.mN2);
-            nodeGraph[res.mN2].neighbors.insert(res.mN1);
+        if (nodeGraph.count(res.n1) && nodeGraph.count(res.n2)) {
+            nodeGraph[res.n1].neighbors.insert(res.n2);
+            nodeGraph[res.n2].neighbors.insert(res.n1);
         }
     }
 
     // Add edges from via resistors
     for (const auto& res : circuit.mViaResistors) {
-        if (nodeGraph.count(res.mN1) && nodeGraph.count(res.mN2)) {
-            nodeGraph[res.mN1].neighbors.insert(res.mN2);
-            nodeGraph[res.mN2].neighbors.insert(res.mN1);
+        if (nodeGraph.count(res.n1) && nodeGraph.count(res.n2)) {
+            nodeGraph[res.n1].neighbors.insert(res.n2);
+            nodeGraph[res.n2].neighbors.insert(res.n1);
         }
     }
 
     // Add edges from tsv resistors
     for (const auto& res : circuit.mTsvResistors) {
-        if (nodeGraph.count(res.mN1) && nodeGraph.count(res.mN2)) {
-            nodeGraph[res.mN1].neighbors.insert(res.mN2);
-            nodeGraph[res.mN2].neighbors.insert(res.mN1);
+        if (nodeGraph.count(res.n1) && nodeGraph.count(res.n2)) {
+            nodeGraph[res.n1].neighbors.insert(res.n2);
+            nodeGraph[res.n2].neighbors.insert(res.n1);
         }
     }
 
     // Add edges from package resistors
     for (const auto& res : circuit.mPkgResistors) {
-        if (nodeGraph.count(res.mN1) && nodeGraph.count(res.mN2)) {
-            nodeGraph[res.mN1].neighbors.insert(res.mN2);
-            nodeGraph[res.mN2].neighbors.insert(res.mN1);
+        if (nodeGraph.count(res.n1) && nodeGraph.count(res.n2)) {
+            nodeGraph[res.n1].neighbors.insert(res.n2);
+            nodeGraph[res.n2].neighbors.insert(res.n1);
         }
     }
 
     // Add edges from voltage sources (treat as connections)
     for (const auto& src : circuit.mVsrcs) {
-        if (nodeGraph.count(src.mFromNode) && nodeGraph.count(src.mToNode)) {
-            nodeGraph[src.mFromNode].neighbors.insert(src.mToNode);
-            nodeGraph[src.mToNode].neighbors.insert(src.mFromNode);
+        if (nodeGraph.count(src.fromNode) && nodeGraph.count(src.toNode)) {
+            nodeGraph[src.fromNode].neighbors.insert(src.toNode);
+            nodeGraph[src.toNode].neighbors.insert(src.fromNode);
         }
     }
 
     // Add edges from current sources (they still conduct)
     for (const auto& src : circuit.mIsrcs) {
-        if (nodeGraph.count(src.mFromNode) && nodeGraph.count(src.mToNode)) {
-            nodeGraph[src.mFromNode].neighbors.insert(src.mToNode);
-            nodeGraph[src.mToNode].neighbors.insert(src.mFromNode);
+        if (nodeGraph.count(src.fromNode) && nodeGraph.count(src.toNode)) {
+            nodeGraph[src.fromNode].neighbors.insert(src.toNode);
+            nodeGraph[src.toNode].neighbors.insert(src.fromNode);
         }
     }
 }
@@ -136,44 +136,44 @@ CircuitConnectivityChecker::checkIsolation(const CircuitGraph& circuit) {
 
         // Check for power sources in this component
         for (const auto& vsrc : circuit.mVsrcs) {
-            if (nodeSet.count(vsrc.mFromNode) || nodeSet.count(vsrc.mToNode)) {
-                compInfo.vsrcs.push_back(vsrc.mName);
+            if (nodeSet.count(vsrc.fromNode) || nodeSet.count(vsrc.toNode)) {
+                compInfo.vsrcs.push_back(vsrc.name);
                 compInfo.hasPowerSource = true;
             }
         }
 
         // Check for current sources
         for (const auto& isrc : circuit.mIsrcs) {
-            if (nodeSet.count(isrc.mFromNode) || nodeSet.count(isrc.mToNode)) {
-                compInfo.isrcs.push_back(isrc.mName);
+            if (nodeSet.count(isrc.fromNode) || nodeSet.count(isrc.toNode)) {
+                compInfo.isrcs.push_back(isrc.name);
             }
         }
 
         // Check for resistors in this component
         for (const auto& res : circuit.mMetalResistors) {
-            if (nodeSet.count(res.mN1) && nodeSet.count(res.mN2)) {
-                compInfo.resistors.push_back(res.mName);
+            if (nodeSet.count(res.n1) && nodeSet.count(res.n2)) {
+                compInfo.resistors.push_back(res.name);
             }
         }
 
         // Check for vias in this component
         for (const auto& via : circuit.mViaResistors) {
-            if (nodeSet.count(via.mN1) && nodeSet.count(via.mN2)) {
-                compInfo.vias.push_back(via.mName);
+            if (nodeSet.count(via.n1) && nodeSet.count(via.n2)) {
+                compInfo.vias.push_back(via.name);
             }
         }
 
         // Check for tsvs in this component
         for (const auto& tsv : circuit.mTsvResistors) {
-            if (nodeSet.count(tsv.mN1) && nodeSet.count(tsv.mN2)) {
-                compInfo.tsvs.push_back(tsv.mName);
+            if (nodeSet.count(tsv.n1) && nodeSet.count(tsv.n2)) {
+                compInfo.tsvs.push_back(tsv.name);
             }
         }
 
         // Check for package resistors in this component
         for (const auto& pkg : circuit.mPkgResistors) {
-            if (nodeSet.count(pkg.mN1) && nodeSet.count(pkg.mN2)) {
-                compInfo.pkgs.push_back(pkg.mName);
+            if (nodeSet.count(pkg.n1) && nodeSet.count(pkg.n2)) {
+                compInfo.pkgs.push_back(pkg.name);
             }
         }
 
@@ -207,7 +207,7 @@ CircuitConnectivityChecker::findIsolatedNodes(const CircuitGraph& circuit) {
 
         // Check for voltage sources
         for (const auto& vsrc : circuit.mVsrcs) {
-            if (nodeSet.count(vsrc.mFromNode) || nodeSet.count(vsrc.mToNode)) {
+            if (nodeSet.count(vsrc.fromNode) || nodeSet.count(vsrc.toNode)) {
                 hasPowerSource = true;
                 break;
             }
@@ -234,7 +234,7 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
 
         // Check metal resistors
         for (const auto& res : circuit.mMetalResistors) {
-            if (res.mN1 == nodePair.first || res.mN2 == nodePair.first) {
+            if (res.n1 == nodePair.first || res.n2 == nodePair.first) {
                 hasConnection = true;
                 break;
             }
@@ -243,7 +243,7 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
         // Check via resistors
         if (!hasConnection) {
             for (const auto& via : circuit.mViaResistors) {
-                if (via.mN1 == nodePair.first || via.mN2 == nodePair.first) {
+                if (via.n1 == nodePair.first || via.n2 == nodePair.first) {
                     hasConnection = true;
                     break;
                 }
@@ -253,7 +253,7 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
         // Check tsv resistors
         if (!hasConnection) {
             for (const auto& tsv : circuit.mTsvResistors) {
-                if (tsv.mN1 == nodePair.first || tsv.mN2 == nodePair.first) {
+                if (tsv.n1 == nodePair.first || tsv.n2 == nodePair.first) {
                     hasConnection = true;
                     break;
                 }
@@ -263,7 +263,7 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
         // Check package resistors
         if (!hasConnection) {
             for (const auto& pkg : circuit.mPkgResistors) {
-                if (pkg.mN1 == nodePair.first || pkg.mN2 == nodePair.first) {
+                if (pkg.n1 == nodePair.first || pkg.n2 == nodePair.first) {
                     hasConnection = true;
                     break;
                 }
@@ -273,8 +273,8 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
         // Check voltage sources
         if (!hasConnection) {
             for (const auto& vsrc : circuit.mVsrcs) {
-                if (vsrc.mFromNode == nodePair.first ||
-                    vsrc.mToNode == nodePair.first) {
+                if (vsrc.fromNode == nodePair.first ||
+                    vsrc.toNode == nodePair.first) {
                     hasConnection = true;
                     break;
                 }
@@ -284,8 +284,8 @@ CircuitConnectivityChecker::findOpenCircuits(const CircuitGraph& circuit) {
         // Check current sources
         if (!hasConnection) {
             for (const auto& isrc : circuit.mIsrcs) {
-                if (isrc.mFromNode == nodePair.first ||
-                    isrc.mToNode == nodePair.first) {
+                if (isrc.fromNode == nodePair.first ||
+                    isrc.toNode == nodePair.first) {
                     hasConnection = true;
                     break;
                 }
@@ -307,37 +307,37 @@ CircuitConnectivityChecker::findShortCircuits(const CircuitGraph& circuit) {
 
     // Check metal resistors
     for (const auto& res : circuit.mMetalResistors) {
-        if (res.mR == 0.0) {
-            shorts.push_back({res.mN1, res.mN2, res.mName, "metal"});
+        if (res.R == 0.0) {
+            shorts.push_back({res.n1, res.n2, res.name, "metal"});
         }
     }
 
     // Check via resistors
     for (const auto& via : circuit.mViaResistors) {
-        if (via.mR == 0.0) {
-            shorts.push_back({via.mN1, via.mN2, via.mName, "via"});
+        if (via.R == 0.0) {
+            shorts.push_back({via.n1, via.n2, via.name, "via"});
         }
     }
 
     // Check tsv resistors
     for (const auto& tsv : circuit.mTsvResistors) {
-        if (tsv.mR == 0.0) {
-            shorts.push_back({tsv.mN1, tsv.mN2, tsv.mName, "tsv"});
+        if (tsv.R == 0.0) {
+            shorts.push_back({tsv.n1, tsv.n2, tsv.name, "tsv"});
         }
     }
 
     // Check package resistors
     for (const auto& pkg : circuit.mPkgResistors) {
-        if (pkg.mR == 0.0) {
-            shorts.push_back({pkg.mN1, pkg.mN2, pkg.mName, "package"});
+        if (pkg.R == 0.0) {
+            shorts.push_back({pkg.n1, pkg.n2, pkg.name, "package"});
         }
     }
 
     // Voltage sources with 0V are allowed shorts
     // for (const auto& vsrc : circuit.mVsrcs) {
-    //     if (vsrc.mV > 0.0) {
+    //     if (vsrc.V > 0.0) {
     //         shorts.push_back(
-    //           {vsrc.mFromNode, vsrc.mToNode, vsrc.mName, "vsrc"});
+    //           {vsrc.fromNode, vsrc.toNode, vsrc.name, "vsrc"});
     //     }
     // }
 

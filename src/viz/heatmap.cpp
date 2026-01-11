@@ -12,7 +12,6 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_set>
 #include <vector>
 
 // stb_image_write is a single-header library.
@@ -46,12 +45,12 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
             continue;
         }
         // The node has no geometry information
-        if (node.mX < 0 || node.mY < 0) {
+        if (node.x < 0 || node.y < 0) {
             continue;
         }
 
-        double x = FPN::fromRep(node.mX);
-        double y = FPN::fromRep(node.mY);
+        double x = FPN::fromRep(node.x);
+        double y = FPN::fromRep(node.y);
 
         if (x < bbox.minX) bbox.minX = x;
         if (y < bbox.minY) bbox.minY = y;
@@ -145,7 +144,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
         }
         const Node& node = itNode->second;
 
-        NetKey netKey = circ.netKey(node.mNet);
+        NetKey netKey = circ.netKey(node.net);
         if (!netKey.layer.valid() || !netKey.netName.valid()) {
             // Ignore invalid netKey if any.
             continue;
@@ -165,8 +164,8 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
         }
 
         // Convert coordinates to meters and then to pixel indices.
-        double x = FPN::fromRep(node.mX);
-        double y = FPN::fromRep(node.mY);
+        double x = FPN::fromRep(node.x);
+        double y = FPN::fromRep(node.y);
 
         int ix = static_cast<int>((x - bbox.minX) / dx);
         int iy = static_cast<int>((y - bbox.minY) / dy);

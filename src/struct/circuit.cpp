@@ -51,11 +51,11 @@ void mergeParallelResistors(std::vector<ResT>& resVec) {
     table.reserve(resVec.size());
 
     for (const auto& r : resVec) {
-        if (r.mN1 == r.mN2) {
+        if (r.n1 == r.n2) {
             // Resistor from node to itself is useless in DC; drop it
             continue;
         }
-        NodePair key(r.mN1, r.mN2);
+        NodePair key(r.n1, r.n2);
         Agg&     agg = table[key];
 
         if (!agg.hasExemplar) {
@@ -63,12 +63,12 @@ void mergeParallelResistors(std::vector<ResT>& resVec) {
             agg.hasExemplar = true;
         }
 
-        if (r.mR == 0.0) {
+        if (r.R == 0.0) {
             // A 0-ohm short dominates anything in parallel
             agg.hasZero = true;
             agg.Gsum    = 0.0; // ignore other conductances
         } else if (!agg.hasZero) {
-            agg.Gsum += 1.0 / r.mR;
+            agg.Gsum += 1.0 / r.R;
         }
     }
 
@@ -80,13 +80,13 @@ void mergeParallelResistors(std::vector<ResT>& resVec) {
         Agg&            agg = kv.second;
 
         ResT merged = agg.exemplar; // start from exemplar to keep metadata
-        merged.mN1  = key.a;
-        merged.mN2  = key.b;
+        merged.n1  = key.a;
+        merged.n2  = key.b;
 
         if (agg.hasZero) {
-            merged.mR = 0.0;
+            merged.R = 0.0;
         } else if (agg.Gsum > 0.0) {
-            merged.mR = 1.0 / agg.Gsum;
+            merged.R = 1.0 / agg.Gsum;
         } else {
             // No valid conductance accumulated: should only happen
             // if everything was dropped; skip in that case.
@@ -109,11 +109,11 @@ void mergeParallelIsrcs(std::vector<Isrc>& isrcs, double absTol = 1e-18) {
     table.reserve(isrcs.size());
 
     for (const auto& s : isrcs) {
-        if (s.mFromNode == s.mToNode) {
+        if (s.fromNode == s.toNode) {
             continue; // no effect
         }
 
-        NodePair key(s.mFromNode, s.mToNode);
+        NodePair key(s.fromNode, s.toNode);
         Agg&     agg = table[key];
 
         if (!agg.hasExemplar) {
@@ -123,8 +123,8 @@ void mergeParallelIsrcs(std::vector<Isrc>& isrcs, double absTol = 1e-18) {
 
         // Determine orientation relative to canonical pair
         double sign =
-          (key.a == s.mFromNode && key.b == s.mToNode) ? 1.0 : -1.0;
-        agg.Isigned += sign * s.mI;
+          (key.a == s.fromNode && key.b == s.toNode) ? 1.0 : -1.0;
+        agg.Isigned += sign * s.I;
     }
 
     isrcs.clear();
@@ -140,13 +140,13 @@ void mergeParallelIsrcs(std::vector<Isrc>& isrcs, double absTol = 1e-18) {
 
         Isrc merged = agg.exemplar; // keep metadata
         if (agg.Isigned >= 0.0) {
-            merged.mFromNode = key.a;
-            merged.mToNode   = key.b;
-            merged.mI        = agg.Isigned;
+            merged.fromNode = key.a;
+            merged.toNode   = key.b;
+            merged.I        = agg.Isigned;
         } else {
-            merged.mFromNode = key.b;
-            merged.mToNode   = key.a;
-            merged.mI        = -agg.Isigned;
+            merged.fromNode = key.b;
+            merged.toNode   = key.a;
+            merged.I        = -agg.Isigned;
         }
 
         isrcs.push_back(std::move(merged));
@@ -166,16 +166,16 @@ void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
     table.reserve(vsrcs.size());
 
     for (const auto& s : vsrcs) {
-        if (s.mFromNode == s.mToNode) {
+        if (s.fromNode == s.toNode) {
             continue; // no effect in DC
         }
 
-        NodePair key(s.mFromNode, s.mToNode);
+        NodePair key(s.fromNode, s.toNode);
         Group&   g = table[key];
 
-        // Voltage w.r.t canonical orientation
+        // Voltage w.R.t canonical orientation
         double Vcanon =
-          (key.a == s.mFromNode && key.b == s.mToNode) ? s.mV : -s.mV;
+          (key.a == s.fromNode && key.b == s.toNode) ? s.V : -s.V;
 
         if (!g.haveCanonical) {
             g.haveCanonical  = true;
@@ -205,16 +205,16 @@ void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
             continue;
         }
         PDN_WARN("Conflicting vsrc representative from %s to %s %.2fV",
-                 g.representative.mFromNode.c_str(),
-                 g.representative.mToNode.c_str(),
-                 g.representative.mV);
+                 g.representative.fromNode.c_str(),
+                 g.representative.toNode.c_str(),
+                 g.representative.V);
         // And all conflicting ones, if any
         for (auto& c : g.conflicts) {
             vsrcs.push_back(std::move(c));
             PDN_WARN("Conflicting vsrc source from %s to %s %.2fV",
-                     c.mFromNode.c_str(),
-                     c.mToNode.c_str(),
-                     c.mV);
+                     c.fromNode.c_str(),
+                     c.toNode.c_str(),
+                     c.V);
         }
     }
 }
@@ -258,7 +258,7 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
         auto it = mNodes.find(name);
         if (it == mNodes.end()) {
             Node groundNode;
-            groundNode.mName = IdString("GND");
+            groundNode.name = IdString("GND");
             it = mNodes.emplace(name, std::move(groundNode)).first;
         }
         return it->second;
@@ -267,17 +267,17 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     auto it = mNodes.find(name);
     if (it != mNodes.end()) {
         Node& node = it->second;
-        if (net >= 0 && !node.mNet) node.mNet = NetId(net);
-        if (x && node.mX < 0) node.mX = FPN::toRep(*x);
-        if (y && node.mY < 0) node.mY = FPN::toRep(*y);
+        if (net >= 0 && !node.net) node.net = NetId(net);
+        if (x && node.x < 0) node.x = FPN::toRep(*x);
+        if (y && node.y < 0) node.y = FPN::toRep(*y);
         return node;
     }
 
     Node newNode;
-    newNode.mName      = name;
-    newNode.mNet       = NetId(net);
-    newNode.mX         = x ? FPN::toRep(*x) : -1;
-    newNode.mY         = y ? FPN::toRep(*y) : -1;
+    newNode.name      = name;
+    newNode.net       = NetId(net);
+    newNode.x         = x ? FPN::toRep(*x) : -1;
+    newNode.y         = y ? FPN::toRep(*y) : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
     return insertIt->second;
 }
@@ -295,24 +295,24 @@ void CircuitGraph::ensureAllReferencedNodesExist() {
     };
 
     for (const auto& res : mMetalResistors) {
-        addName(res.mN1);
-        addName(res.mN2);
+        addName(res.n1);
+        addName(res.n2);
     }
     for (const auto& res : mViaResistors) {
-        addName(res.mN1);
-        addName(res.mN2);
+        addName(res.n1);
+        addName(res.n2);
     }
     for (const auto& res : mPkgResistors) {
-        addName(res.mN1);
-        addName(res.mN2);
+        addName(res.n1);
+        addName(res.n2);
     }
     for (const auto& src : mVsrcs) {
-        addName(src.mFromNode);
-        addName(src.mToNode);
+        addName(src.fromNode);
+        addName(src.toNode);
     }
     for (const auto& src : mIsrcs) {
-        addName(src.mFromNode);
-        addName(src.mToNode);
+        addName(src.fromNode);
+        addName(src.toNode);
     }
     // Always ensure ground marker exists if referenced by any element
     if (names.count(IdString("GND")) == 0) {
@@ -325,15 +325,15 @@ void CircuitGraph::ensureAllReferencedNodesExist() {
 bool CircuitGraph::refersToGround() const {
     auto ref0 = [](const IdString& s) { return s == "GND"; };
     for (const auto& res : mMetalResistors)
-        if (ref0(res.mN1) || ref0(res.mN2)) return true;
+        if (ref0(res.n1) || ref0(res.n2)) return true;
     for (const auto& res : mViaResistors)
-        if (ref0(res.mN1) || ref0(res.mN2)) return true;
+        if (ref0(res.n1) || ref0(res.n2)) return true;
     for (const auto& res : mPkgResistors)
-        if (ref0(res.mN1) || ref0(res.mN2)) return true;
+        if (ref0(res.n1) || ref0(res.n2)) return true;
     for (const auto& src : mVsrcs)
-        if (ref0(src.mFromNode) || ref0(src.mToNode)) return true;
+        if (ref0(src.fromNode) || ref0(src.toNode)) return true;
     for (const auto& src : mIsrcs)
-        if (ref0(src.mFromNode) || ref0(src.mToNode)) return true;
+        if (ref0(src.fromNode) || ref0(src.toNode)) return true;
     return false;
 }
 
@@ -352,9 +352,9 @@ void CircuitGraph::validateReadyForMna() const {
         }
     };
 
-    for (const auto& res : mMetalResistors) checkR(res.mName, res.mR);
-    for (const auto& res : mViaResistors) checkR(res.mName, res.mR);
-    for (const auto& res : mPkgResistors) checkR(res.mName, res.mR);
+    for (const auto& res : mMetalResistors) checkR(res.name, res.R);
+    for (const auto& res : mViaResistors) checkR(res.name, res.R);
+    for (const auto& res : mPkgResistors) checkR(res.name, res.R);
 }
 
 void CircuitGraph::purgeParallelElements() {
@@ -401,24 +401,24 @@ std::size_t CircuitGraph::purgeIsolatedNodes() {
 
     // Count incident edges for each node.
     for (const auto& e : mMetalResistors) {
-        bumpIfPresent(e.mN1);
-        bumpIfPresent(e.mN2);
+        bumpIfPresent(e.n1);
+        bumpIfPresent(e.n2);
     }
     for (const auto& e : mViaResistors) {
-        bumpIfPresent(e.mN1);
-        bumpIfPresent(e.mN2);
+        bumpIfPresent(e.n1);
+        bumpIfPresent(e.n2);
     }
     for (const auto& e : mPkgResistors) {
-        bumpIfPresent(e.mN1);
-        bumpIfPresent(e.mN2);
+        bumpIfPresent(e.n1);
+        bumpIfPresent(e.n2);
     }
     for (const auto& e : mVsrcs) {
-        bumpIfPresent(e.mFromNode);
-        bumpIfPresent(e.mToNode);
+        bumpIfPresent(e.fromNode);
+        bumpIfPresent(e.toNode);
     }
     for (const auto& e : mIsrcs) {
-        bumpIfPresent(e.mFromNode);
-        bumpIfPresent(e.mToNode);
+        bumpIfPresent(e.fromNode);
+        bumpIfPresent(e.toNode);
     }
 
     // Remove nodes with degree 0.

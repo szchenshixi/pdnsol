@@ -54,68 +54,68 @@ struct NetKey {
 };
 
 struct Node {
-    IdString mName;
-    NetId    mNet; // Layer-(VDD/VSS) combination
-    Tick     mX;   // micrometers, in FPN format
-    Tick     mY;   // micrometers, in FPN format
+    IdString name;
+    NetId    net; // Layer-(VDD/VSS) combination
+    Tick     x;   // micrometers, in FPN format
+    Tick     y;   // micrometers, in FPN format
 };
 
 struct MetalRes {
-    IdString   mName;
-    NetId      mNet; // Layer-(VDD/VSS) combination
-    IdString   mN1;  // Node_1
-    IdString   mN2;  // Node_2
-    ScalarType mR = 0.0;
+    IdString   name;
+    NetId      net; // Layer-(VDD/VSS) combination
+    IdString   n1;  // Node_1
+    IdString   n2;  // Node_2
+    ScalarType R = 0.0;
 };
 
 struct ViaRes {
-    IdString   mName;
-    IdString   mN1;
-    IdString   mN2;
-    ScalarType mR = 0.0;
+    IdString   name;
+    IdString   n1;
+    IdString   n2;
+    ScalarType R = 0.0;
 };
 
 struct TsvRes {
-    IdString   mName;
-    IdString   mN1;
-    IdString   mN2;
-    ScalarType mR = 0.0;
+    IdString   name;
+    IdString   n1;
+    IdString   n2;
+    ScalarType R = 0.0;
 };
 
 struct PkgRes {
-    IdString   mName;
-    IdString   mN1;
-    IdString   mN2;
-    ScalarType mR = 0.0; // Resistance, Ohm
+    IdString   name;
+    IdString   n1;
+    IdString   n2;
+    ScalarType R = 0.0; // Resistance, Ohm
 };
 
 struct Vsrc {
-    IdString mName;
-    IdString mFromNode;
-    IdString mToNode;
+    IdString name;
+    IdString fromNode;
+    IdString toNode;
     // subtypes: "global", "via", "package", "other"
     enum Type { GLOBAL, VIA, PACKAGE, OTHER };
-    Type       mType = OTHER;
-    ScalarType mV    = 0.0;
+    Type       type = OTHER;
+    ScalarType V    = 0.0;
 };
 
 struct Isrc {
-    IdString mName;
-    IdString mFromNode;
-    IdString mToNode;
+    IdString name;
+    IdString fromNode;
+    IdString toNode;
     // subtypes: "iB", "other"
     enum Type { IB, OTHER };
-    Type       mType = OTHER;
-    ScalarType mI    = 0.0; // Current, Amp
+    Type       type = OTHER;
+    ScalarType I    = 0.0; // Current, Amp
 };
 
 struct SectionMeta {
-    IdString    mType; // "layer" or "vias"
-    IdString    mName;
-    IdString    mNet;
-    IdString    mFromNet;
-    IdString    mToNet;
-    std::string mRaw;
+    IdString    type; // "layer" or "vias"
+    IdString    name;
+    IdString    net;
+    IdString    fromNet;
+    IdString    toNet;
+    std::string raw;
 };
 
 struct CircuitGraph {

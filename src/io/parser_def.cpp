@@ -1994,10 +1994,10 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
 
                     IdString nodeId = IdString(ossName.str());
                     Node     node;
-                    node.mName = nodeId;
-                    node.mNet  = netId;
-                    node.mX    = FPN::toRep(xCenterUm);
-                    node.mY    = FPN::toRep(yCenterUm);
+                    node.name = nodeId;
+                    node.net  = netId;
+                    node.x    = FPN::toRep(xCenterUm);
+                    node.y    = FPN::toRep(yCenterUm);
 
                     graph.mNodes.emplace(nodeId, node);
                     tileNodeIds[ln][static_cast<std::size_t>(l)].at(ix, iy) =
@@ -2024,11 +2024,11 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
                     IdString resId = IdString(ossResName.str());
 
                     MetalRes mr;
-                    mr.mName = resId;
-                    mr.mNet  = netId;
-                    mr.mN1   = n1;
-                    mr.mN2   = n2;
-                    mr.mR    = R;
+                    mr.name = resId;
+                    mr.net  = netId;
+                    mr.n1   = n1;
+                    mr.n2   = n2;
+                    mr.R    = R;
                     graph.mMetalResistors.push_back(std::move(mr));
                 }
             }
@@ -2052,11 +2052,11 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
                     IdString resId = IdString(ossResName.str());
 
                     MetalRes mr;
-                    mr.mName = resId;
-                    mr.mNet  = netId;
-                    mr.mN1   = n1;
-                    mr.mN2   = n2;
-                    mr.mR    = R;
+                    mr.name = resId;
+                    mr.net  = netId;
+                    mr.n1   = n1;
+                    mr.n2   = n2;
+                    mr.R    = R;
                     graph.mMetalResistors.push_back(std::move(mr));
                 }
             }
@@ -2114,10 +2114,10 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
                         << ixT << "_" << iyT << "_" << tsvCounter++;
 
                 TsvRes tr;
-                tr.mName = IdString(ossName.str());
-                tr.mN1   = bottomId;
-                tr.mN2   = topId;
-                tr.mR    = R;
+                tr.name = IdString(ossName.str());
+                tr.n1   = bottomId;
+                tr.n2   = topId;
+                tr.R    = R;
                 graph.mTsvResistors.push_back(std::move(tr));
             } else {
                 ossName << ni.name.str() << "_VIA_" << blName.str() << "_to_"
@@ -2125,10 +2125,10 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
                         << ixT << "_" << iyT << "_" << viaCounter++;
 
                 ViaRes vr;
-                vr.mName = IdString(ossName.str());
-                vr.mN1   = bottomId;
-                vr.mN2   = topId;
-                vr.mR    = R;
+                vr.name = IdString(ossName.str());
+                vr.n1   = bottomId;
+                vr.n2   = topId;
+                vr.R    = R;
                 graph.mViaResistors.push_back(std::move(vr));
             }
         }

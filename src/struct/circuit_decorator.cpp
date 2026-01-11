@@ -111,13 +111,13 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             const IdString& nodeName = kv.first;
             const Node&     node     = kv.second;
 
-            if (node.mNet.get() < 0) {
+            if (node.net.get() < 0) {
                 // Skip nodes with invalid net index.
                 continue;
             }
 
             // Map node.mNet (int32) -> NetKey.
-            NetId  nid(node.mNet);
+            NetId  nid(node.net);
             NetKey nk = graph.netKey(nid);
 
             // Filter by landing layer.
@@ -127,8 +127,8 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             if (nk.netName != netNameId) continue;
 
             // Compute squared distance in [um^2].
-            const Tick        dx = node.mX - xTick;
-            const Tick        dy = node.mY - yTick;
+            const Tick        dx = node.x - xTick;
+            const Tick        dy = node.y - yTick;
             const long double d2 =
               static_cast<long double>(dx) * static_cast<long double>(dx) +
               static_cast<long double>(dy) * static_cast<long double>(dy);
@@ -136,7 +136,7 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             if (!found || d2 < bestD2) {
                 found       = true;
                 bestD2      = d2;
-                outNodeName = nodeName; // or node.mName; they should match
+                outNodeName = nodeName; // or node.name; they should match
             }
         }
 
@@ -257,10 +257,10 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             PkgRes            pkg;
             const std::string pkgName =
               "RPKG_VSRC_" + std::to_string(vsrcCounter);
-            pkg.mName = IdString(pkgName);
-            pkg.mN1   = info.pkgNode;    // package-side node
-            pkg.mN2   = closestNodeName; // PDN node
-            pkg.mR    = packageR;        // first source -> R_eq = R_user
+            pkg.name = IdString(pkgName);
+            pkg.n1   = info.pkgNode;    // package-side node
+            pkg.n2   = closestNodeName; // PDN node
+            pkg.R    = packageR;        // first source -> R_eq = R_user
 
             graph.mPkgResistors.push_back(pkg);
             info.pkgResIdx = graph.mPkgResistors.size() - 1;
@@ -272,9 +272,9 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             NodeVsrcInfo& info = itInfo->second;
             ++info.vsrcCount;
 
-            const ScalarType newReq = packageR / info.vsrcCount;
+            const ScalarType newR = packageR / info.vsrcCount;
 
-            graph.mPkgResistors[info.pkgResIdx].mR = newReq;
+            graph.mPkgResistors[info.pkgResIdx].R = newR;
         }
 
         NodeVsrcInfo& info = itInfo->second;
@@ -295,13 +295,13 @@ void CircuitDecorator::addVoltageSourceFromConfig(
 
         Vsrc              vsrc;
         const std::string vsrcName = "VSRC_" + std::to_string(vsrcCounter);
-        vsrc.mName                 = IdString(vsrcName);
+        vsrc.name                  = IdString(vsrcName);
         // package-side node feeding R_pkg_eq
-        vsrc.mFromNode             = info.pkgNode;
+        vsrc.fromNode              = info.pkgNode;
         // Ideal reference ground
-        vsrc.mToNode               = IdString("GND");
-        vsrc.mType                 = Vsrc::PACKAGE;
-        vsrc.mV                    = voltage;
+        vsrc.toNode                = IdString("GND");
+        vsrc.type                  = Vsrc::PACKAGE;
+        vsrc.V                     = voltage;
 
         graph.ensureNode(info.pkgNode);
         graph.mVsrcs.push_back(vsrc);
@@ -351,8 +351,8 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
     };
     for (const auto& kv : graph.mNodes) {
         const Node& n = kv.second;
-        if (n.mNet != netId) continue;
-        if (!contains(rect, n.mX, n.mY)) continue;
+        if (n.net != netId) continue;
+        if (!contains(rect, n.x, n.y)) continue;
 
         candidates.push_back(NodeRef{&n});
     }
@@ -381,11 +381,11 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
         const Node* n = candidates[i].node;
 
         Isrc is;
-        is.mName     = IdString(formatIsrcName(layer, netName, regionIdx, i));
-        is.mFromNode = isPower ? n->mName : IdString("GND");
-        is.mToNode   = isPower ? IdString("GND") : n->mName;
-        is.mType     = Isrc::IB;
-        is.mI        = static_cast<ScalarType>(I);
+        is.name     = IdString(formatIsrcName(layer, netName, regionIdx, i));
+        is.fromNode = isPower ? n->name : IdString("GND");
+        is.toNode   = isPower ? IdString("GND") : n->name;
+        is.type     = Isrc::IB;
+        is.I        = static_cast<ScalarType>(I);
 
         graph.mIsrcs.push_back(std::move(is));
     }

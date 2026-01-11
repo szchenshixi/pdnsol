@@ -118,12 +118,12 @@ struct SpefState {
 // For each *D_NET, push a SectionMeta entry if desired.
 void recordNetSection(CircuitGraph& circ, const SpefState& st) {
     SectionMeta meta;
-    meta.mType = IdString("net");
-    meta.mName = IdString(st.currentNetName);
-    meta.mNet = IdString(st.currentNetName);
-    meta.mFromNet = IdString(""); // not used
-    meta.mToNet = IdString("");   // not used
-    meta.mRaw = "";     // could store full "*D_NET" line if needed
+    meta.type = IdString("net");
+    meta.name = IdString(st.currentNetName);
+    meta.net = IdString(st.currentNetName);
+    meta.fromNet = IdString(""); // not used
+    meta.toNet = IdString("");   // not used
+    meta.raw = "";     // could store full "*D_NET" line if needed
     circ.mSections.push_back(std::move(meta));
 }
 
@@ -162,16 +162,16 @@ void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
     MetalRes res;
     // Unique-ish name: R_<net>_<idx>
     std::string rName = "R_" + st.currentNetName + "_" + idxStr;
-    res.mName = IdString(rName);
-    res.mN1 = pn1.mId;
-    res.mN2 = pn2.mId;
+    res.name = IdString(rName);
+    res.n1 = pn1.mId;
+    res.n2 = pn2.mId;
 
     int32_t netIndex = -1;
     if (pn1.mNet >= 0) netIndex = pn1.mNet;
     else if (pn2.mNet >= 0) netIndex = pn2.mNet;
-    res.mNet = NetId(netIndex);
+    res.net = NetId(netIndex);
 
-    res.mR = rVal;
+    res.R = rVal;
 
     circ.mMetalResistors.push_back(std::move(res));
 }

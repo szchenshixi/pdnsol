@@ -52,14 +52,14 @@ void CircuitCoarsener::computeBoundingBox() {
     bool first = true;
     for (const auto& kv : mIn.mNodes) {
         const Node& n = kv.second;
-        if (n.mX < 0 || n.mY < 0) continue;
+        if (n.x < 0 || n.y < 0) continue;
         if (first) {
-            mMinX = n.mX;
-            mMinY = n.mY;
+            mMinX = n.x;
+            mMinY = n.y;
             first = false;
         } else {
-            if (n.mX < mMinX) mMinX = n.mX;
-            if (n.mY < mMinY) mMinY = n.mY;
+            if (n.x < mMinX) mMinX = n.x;
+            if (n.y < mMinY) mMinY = n.y;
         }
     }
 }
@@ -86,9 +86,9 @@ int64_t CircuitCoarsener::tileIndex(Tick coord, Tick origin) const {
 
 detail::TileKey CircuitCoarsener::computeTileKey(const Node& n) const {
     detail::TileKey key;
-    key.net = n.mNet.get();
-    key.tx  = n.mX < 0 ? -1 : tileIndex(n.mX, mMinX);
-    key.ty  = n.mY < 0 ? -1 : tileIndex(n.mY, mMinY);
+    key.net = n.net.get();
+    key.tx  = n.x < 0 ? -1 : tileIndex(n.x, mMinX);
+    key.ty  = n.y < 0 ? -1 : tileIndex(n.y, mMinY);
     return key;
 }
 
@@ -102,8 +102,8 @@ void CircuitCoarsener::initLayerModes() {
 
     // Any MetalRes layer not explicitly mentioned gets default Approximate.
     for (const auto& r : mIn.mMetalResistors) {
-        if (mLayerMode.find(r.mName) == mLayerMode.end()) {
-            mLayerMode[r.mName] = LayerMode::Approximate;
+        if (mLayerMode.find(r.name) == mLayerMode.end()) {
+            mLayerMode[r.name] = LayerMode::Approximate;
         }
     }
 }
@@ -117,7 +117,7 @@ void CircuitCoarsener::classifyNodeModes() {
     // Mark nodes touched by metal resistors.
     for (const auto& r : mIn.mMetalResistors) {
         LayerMode layerMode = LayerMode::Approximate;
-        auto      it        = mLayerMode.find(r.mName);
+        auto      it        = mLayerMode.find(r.name);
         if (it != mLayerMode.end()) {
             layerMode = it->second;
         }
@@ -126,8 +126,8 @@ void CircuitCoarsener::classifyNodeModes() {
                                 ? detail::NodeMode::Accurate
                                 : detail::NodeMode::Approximate;
 
-        bumpNodeMode(r.mN1, nm);
-        bumpNodeMode(r.mN2, nm);
+        bumpNodeMode(r.n1, nm);
+        bumpNodeMode(r.n2, nm);
     }
 
     // Any remaining Unknown nodes (only vias / sources / package, no metal)
@@ -231,13 +231,13 @@ IdString CircuitCoarsener::createCoarseNode(IdString inId) {
                       std::to_string(key.tx) + "_" + std::to_string(key.ty));
 
     Node coarseNode;
-    coarseNode.mName = coarseId;
-    coarseNode.mNet  = inNode.mNet;
+    coarseNode.name = coarseId;
+    coarseNode.net  = inNode.net;
 
     // Place coarse node at the tile center.
-    coarseNode.mX =
+    coarseNode.x =
       mMinX + static_cast<Tick>(key.tx * mTileSizeTicks + mTileSizeTicks / 2);
-    coarseNode.mY =
+    coarseNode.y =
       mMinY + static_cast<Tick>(key.ty * mTileSizeTicks + mTileSizeTicks / 2);
 
     mTileNodeMap.emplace(key, coarseId);
@@ -260,8 +260,8 @@ void CircuitCoarsener::buildMetalResistors() {
     for (const auto& r : mIn.mMetalResistors) {
         // Decide how the endpoints map (accurate vs coarse) based on node
         // mode.
-        IdString n1 = mapNode(r.mN1);
-        IdString n2 = mapNode(r.mN2);
+        IdString n1 = mapNode(r.n1);
+        IdString n2 = mapNode(r.n2);
 
         if (n1 == n2) {
             // Entire segment collapsed inside one tile; drop.
@@ -271,10 +271,10 @@ void CircuitCoarsener::buildMetalResistors() {
         }
 
         MetalRes cr = r;
-        cr.mN1      = n1;
-        cr.mN2      = n2;
+        cr.n1      = n1;
+        cr.n2      = n2;
 
-        // We keep cr.mName and cr.mNet unchanged; the layer identity is
+        // We keep cr.name and cr.mNet unchanged; the layer identity is
         // preserved.
         out.mMetalResistors.push_back(std::move(cr));
     }
@@ -287,8 +287,8 @@ void CircuitCoarsener::buildViaResistors() {
     out.mViaResistors.reserve(mIn.mViaResistors.size());
 
     for (const auto& v : mIn.mViaResistors) {
-        IdString n1 = mapNode(v.mN1);
-        IdString n2 = mapNode(v.mN2);
+        IdString n1 = mapNode(v.n1);
+        IdString n2 = mapNode(v.n2);
 
         if (n1 == n2) {
             // Via endpoints collapsed into same coarse node (local vertical
@@ -297,8 +297,8 @@ void CircuitCoarsener::buildViaResistors() {
         }
 
         ViaRes cv = v;
-        cv.mN1    = n1;
-        cv.mN2    = n2;
+        cv.n1    = n1;
+        cv.n2    = n2;
         out.mViaResistors.push_back(std::move(cv));
     }
 }
@@ -310,14 +310,14 @@ void CircuitCoarsener::buildPkgResistors() {
     out.mPkgResistors.reserve(mIn.mPkgResistors.size());
 
     for (const auto& p : mIn.mPkgResistors) {
-        IdString n1 = mapNode(p.mN1);
-        IdString n2 = mapNode(p.mN2);
+        IdString n1 = mapNode(p.n1);
+        IdString n2 = mapNode(p.n2);
 
         if (n1 == n2) continue;
 
         PkgRes cp = p;
-        cp.mN1    = n1;
-        cp.mN2    = n2;
+        cp.n1    = n1;
+        cp.n2    = n2;
         out.mPkgResistors.push_back(std::move(cp));
     }
 }
@@ -333,8 +333,8 @@ void CircuitCoarsener::buildVsrcs() {
     out.mVsrcs.reserve(mIn.mVsrcs.size());
 
     for (const auto& vs : mIn.mVsrcs) {
-        IdString from = mapNode(vs.mFromNode);
-        IdString to   = mapNode(vs.mToNode);
+        IdString from = mapNode(vs.fromNode);
+        IdString to   = mapNode(vs.toNode);
 
         if (from == to) {
             // Source between same node is ineffective; drop.
@@ -342,8 +342,8 @@ void CircuitCoarsener::buildVsrcs() {
         }
 
         Vsrc nvs      = vs;
-        nvs.mFromNode = from;
-        nvs.mToNode   = to;
+        nvs.fromNode = from;
+        nvs.toNode   = to;
         out.mVsrcs.push_back(std::move(nvs));
     }
 }
@@ -355,16 +355,16 @@ void CircuitCoarsener::buildIsrcs() {
     out.mIsrcs.reserve(mIn.mIsrcs.size());
 
     for (const auto& is : mIn.mIsrcs) {
-        IdString from = mapNode(is.mFromNode);
-        IdString to   = mapNode(is.mToNode);
+        IdString from = mapNode(is.fromNode);
+        IdString to   = mapNode(is.toNode);
 
         if (from == to) {
             continue;
         }
 
         Isrc nis      = is;
-        nis.mFromNode = from;
-        nis.mToNode   = to;
+        nis.fromNode = from;
+        nis.toNode   = to;
         out.mIsrcs.push_back(std::move(nis));
     }
 }

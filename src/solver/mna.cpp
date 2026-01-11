@@ -22,7 +22,7 @@ Indices buildIndices(const CircuitGraph& circ) {
     IdString::Map<IndexType> vsrcIndex;
     vsrcIndex.reserve(circ.mVsrcs.size());
     for (IndexType k = 0; k < static_cast<IndexType>(circ.mVsrcs.size()); ++k) {
-        vsrcIndex.emplace(circ.mVsrcs[k].mName, k);
+        vsrcIndex.emplace(circ.mVsrcs[k].name, k);
     }
 
     return Indices{std::move(nodeIndex), std::move(vsrcIndex)};
@@ -76,16 +76,16 @@ MNASystem assembleMNA(CircuitGraph& circ) {
       };
 
     auto stampVoltageSource = [&](const Vsrc& voltageSource) {
-        auto it = indices.mVsrcIndex.find(voltageSource.mName);
+        auto it = indices.mVsrcIndex.find(voltageSource.name);
         if (it == indices.mVsrcIndex.end()) {
             throw std::runtime_error("Voltage source mId not indexed: " +
-                                     voltageSource.mName.str());
+                                     voltageSource.name.str());
         }
         const IndexType vsrcIdx = it->second;
         const IndexType row = numNodes + vsrcIdx;
 
-        IndexType fromIdx = getNodeIndex(voltageSource.mFromNode);
-        IndexType toIdx = getNodeIndex(voltageSource.mToNode);
+        IndexType fromIdx = getNodeIndex(voltageSource.fromNode);
+        IndexType toIdx = getNodeIndex(voltageSource.toNode);
 
         if (fromIdx > -1) {
             triplets.emplace_back(fromIdx, row, +1.0);
@@ -96,29 +96,29 @@ MNASystem assembleMNA(CircuitGraph& circ) {
             triplets.emplace_back(row, toIdx, -1.0);
         }
 
-        bVector(row) = voltageSource.mV;
+        bVector(row) = voltageSource.V;
     };
 
     for (const auto& resistor : circ.mMetalResistors) {
-        const ScalarType conductance = 1.0 / resistor.mR;
-        stampConductance(resistor.mN1, resistor.mN2, conductance);
+        const ScalarType conductance = 1.0 / resistor.R;
+        stampConductance(resistor.n1, resistor.n2, conductance);
     }
     for (const auto& resistor : circ.mViaResistors) {
-        const ScalarType conductance = 1.0 / resistor.mR;
-        stampConductance(resistor.mN1, resistor.mN2, conductance);
+        const ScalarType conductance = 1.0 / resistor.R;
+        stampConductance(resistor.n1, resistor.n2, conductance);
     }
     for (const auto& resistor : circ.mTsvResistors) {
-        const ScalarType conductance = 1.0 / resistor.mR;
-        stampConductance(resistor.mN1, resistor.mN2, conductance);
+        const ScalarType conductance = 1.0 / resistor.R;
+        stampConductance(resistor.n1, resistor.n2, conductance);
     }
     for (const auto& resistor : circ.mPkgResistors) {
-        const ScalarType conductance = 1.0 / resistor.mR;
-        stampConductance(resistor.mN1, resistor.mN2, conductance);
+        const ScalarType conductance = 1.0 / resistor.R;
+        stampConductance(resistor.n1, resistor.n2, conductance);
     }
 
     for (const auto& currentSource : circ.mIsrcs) {
         stampCurrent(
-          currentSource.mFromNode, currentSource.mToNode, currentSource.mI);
+          currentSource.fromNode, currentSource.toNode, currentSource.I);
     }
 
     for (const auto& voltageSource : circ.mVsrcs) {
