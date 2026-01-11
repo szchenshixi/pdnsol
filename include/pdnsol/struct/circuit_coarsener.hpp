@@ -24,16 +24,16 @@ enum class LayerMode : uint8_t {
 
 // Configuration for coarse-model construction.
 struct CoarseModelConfig {
-    // Tile size in micrometers (um) used for approximate layers.
+    // Tile size in micrometers (um) used for approximate layers
     // All nodes of an approximate layer whose (x,y) fall into the same
-    // tile are merged into one coarse node.
+    // tile are merged into one coarse node
     ScalarType tileSizeUm = 100.0;
 
     // Per-layer overrides:
     //   key:   MetalRes::mName (i.e., the PDN section / layer name)
     //   value: Accurate or Approximate
     //
-    // Any MetalRes with mName not present here will default to Approximate.
+    // Any MetalRes with mName not present here will default to Approximate
     // Typically you'll explicitly mark:
     //   - top-most metals (e.g., M9 VDD, M9 VSS) as Accurate
     //   - bottom rails (e.g., M1 straps) as Accurate
@@ -97,7 +97,7 @@ class CircuitCoarsener {
     CircuitCoarsener(const CircuitGraph&      inGraph,
                      const CoarseModelConfig& cfg);
 
-    // Construct and return the coarse CircuitGraph.
+    // Construct and return the coarse CircuitGraph
     CircuitGraph build();
 
   private:

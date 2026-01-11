@@ -225,7 +225,7 @@ bool CoarsePdnBuilder3D::buildCoarsePdnFromDef(const std::string& defPath,
     // Make sure output is clean too
     outGraph = CircuitGraph{};
 
-    // Precompute selection once and keep it active during parsing/recording.
+    // Precompute selection once and keep it active during parsing/recording
     const std::vector<int> netIndices = selectNetIndices(filter);
     setNetSelectedMask(netIndices);
 
@@ -648,7 +648,7 @@ void CoarsePdnBuilder3D::recordStripeFromSegment(const std::string& netName,
         recordStripeRectangle(
           netName, layerName, xMin, y0 - halfLo, xMax, y0 + halfHi);
     } else {
-        // Non-Manhattan (unlikely in PDN); fall back to bounding box.
+        // Non-Manhattan (unlikely in PDN); fall back to bounding box
         int xMin = std::min(x0, x1);
         int xMax = std::max(x0, x1);
         int yMin = std::min(y0, y1);
@@ -861,7 +861,7 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                     // addViaInstance(currentNetName, viaName, x0, y0);
                     recordViaInstance(currentNetName, viaName, x0, y0);
                 } else if (i < n && tokens[i] == "(") {
-                    // Wire segment: (x0 y0) (x1 y1) ...
+                    // Wire segment: (x0 y0) (x1 y1) ..
                     int x1 = 0, y1 = 0;
                     if (!parseDefPoint(tokens, i, x0, y0, x1, y1, consumed)) {
                         break;
@@ -1114,7 +1114,7 @@ void CoarsePdnBuilder3D::handleViasLine(const std::string& line) {
     if (tokens.empty()) return;
 
     // We only care about lines that start a via definition:
-    //   - via4_1600x1600 + VIARULE ... + CUTSIZE ... + LAYERS ...
+    //   - via4_1600x1600 + VIARULE ... + CUTSIZE ... + LAYERS ..
     if (tokens[0] != "-" || tokens.size() < 2) {
         return;
     }
@@ -1519,7 +1519,7 @@ static std::string extractNetNameFromInstance(const std::string& instName,
     //   U_<macroName>_<netName>_<number>
     //
     // We do a case-insensitive search for <macroName>, then take the
-    // substring between the macro and the final "_<digits>" suffix.
+    // substring between the macro and the final "_<digits>" suffix
 
     auto toLower = [](std::string s) {
         std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) {
@@ -1531,13 +1531,13 @@ static std::string extractNetNameFromInstance(const std::string& instName,
     const std::string instLower  = toLower(instName);
     const std::string macroLower = toLower(macroName);
 
-    // Require "U_" prefix (case-insensitive).
+    // Require "U_" prefix (case-insensitive)
     if (instLower.size() < 2 || instLower.rfind("u_", 0) != 0) {
         return "";
     }
 
     // Find macro name in the instance (case-insensitive), starting after
-    // "U_".
+    // "U_"
     const std::size_t searchStart = 2;
     const std::size_t macroPos    = instLower.find(macroLower, searchStart);
     if (macroPos == std::string::npos) return "";
@@ -1545,17 +1545,17 @@ static std::string extractNetNameFromInstance(const std::string& instName,
     std::size_t afterMacro = macroPos + macroLower.size();
     if (afterMacro > instName.size()) return "";
 
-    // Skip '_' after macro name.
+    // Skip '_' after macro name
     while (afterMacro < instName.size() && instName[afterMacro] == '_') {
         ++afterMacro;
     }
 
-    // We expect a numeric suffix "_<digits>".
+    // We expect a numeric suffix "_<digits>"
     const std::size_t lastUnderscore = instName.rfind('_');
     if (lastUnderscore == std::string::npos) return "";
     if (lastUnderscore <= afterMacro) return "";
 
-    // Verify suffix is all digits.
+    // Verify suffix is all digits
     if (lastUnderscore + 1 >= instName.size()) return "";
     for (std::size_t i = lastUnderscore + 1; i < instName.size(); ++i) {
         if (!std::isdigit(static_cast<unsigned char>(instName[i]))) {
@@ -1569,11 +1569,11 @@ static std::string extractNetNameFromInstance(const std::string& instName,
 void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
                                            const std::string& macroName,
                                            int xDbu, int yDbu) {
-    // Only TSV macros should be recorded.
+    // Only TSV macros should be recorded
     const TechTsv* tsv = mTechDb.getTsv(IdString(macroName));
     if (!tsv) return;
 
-    // Coordinates are required for correct tile snapping.
+    // Coordinates are required for correct tile snapping
     if (xDbu < 0 || yDbu < 0) {
         PDN_WARN("Found a TSV without coordinates. Skip. inst=%s macro=%s",
                  instName.c_str(),
@@ -1581,7 +1581,7 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
         return;
     }
 
-    // Derive net name from the instance naming convention.
+    // Derive net name from the instance naming convention
     std::string netName = extractNetNameFromInstance(instName, macroName);
     if (netName.empty()) {
         PDN_WARN("Failed to extract TSV net name from instance: %s (macro=%s)",
@@ -1592,7 +1592,7 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
 
     auto netIt = mNetByName.find(IdString::tryLookup(netName));
     if (netIt == mNetByName.end()) {
-        // Not a PDN net we care about.
+        // Not a PDN net we care about
         return;
     }
     const int netIndex = netIt->second.index;
@@ -1732,7 +1732,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         const double x1_um = static_cast<double>(s.x1) / mDbuPerMicron;
         const double y1_um = static_cast<double>(s.y1) / mDbuPerMicron;
 
-        // Convert stripe bbox to a tile index range (inclusive).
+        // Convert stripe bbox to a tile index range (inclusive)
         const int ix0 = clamp(
           static_cast<int>(std::floor((x0_um - g.xMin) / g.dx)), 0, g.nx - 1);
         const int ix1 = clamp(
@@ -1803,7 +1803,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
           stripeIndex[netIndex][layerIndex].at(ixRaw, iyRaw);
 
         // Find best horizontal stripe (closest centerline) and best
-        // vertical stripe.
+        // vertical stripe
         int       bestH      = -1;
         long long bestHDist  = std::numeric_limits<long long>::max();
         long long bestHWidth = std::numeric_limits<long long>::max();
@@ -1813,7 +1813,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         long long bestVWidth = std::numeric_limits<long long>::max();
 
         // Tolerance in DBU to avoid "on-the-edge" misses due to integer
-        // half-width truncation.
+        // half-width truncation
         constexpr int tolDbu = 1;
 
         for (int sIdx : candidates) {
@@ -1864,7 +1864,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         int ix = ixRaw;
         int iy = iyRaw;
 
-        // Snap row to the horizontal stripe's representative row (if any).
+        // Snap row to the horizontal stripe's representative row (if any)
         if (bestH >= 0) {
             const StripeRec& s =
               mRecordedStripes[static_cast<std::size_t>(bestH)];
@@ -1873,7 +1873,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
             iy                 = representativeRow(g, y0_um, y1_um);
         }
 
-        // Snap col to the vertical stripe's representative col (if any).
+        // Snap col to the vertical stripe's representative col (if any)
         if (bestV >= 0) {
             const StripeRec& s =
               mRecordedStripes[static_cast<std::size_t>(bestV)];

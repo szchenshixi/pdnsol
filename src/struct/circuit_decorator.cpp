@@ -54,14 +54,14 @@ void CircuitDecorator::addCurrentRegionsFromJson(
 
 void CircuitDecorator::addVoltageSourceFromConfig(
   const std::string& configFilePath, CircuitGraph& graph) {
-    // Landing layer for all voltage sources (user-specified).
-    // Example: "M8", "TOP_METAL", etc.
+    // Landing layer for all voltage sources (user-specified)
+    // Example: "M8", "TOP_METAL", etc
     const std::string& landingLayerStr = mCfg.voltageSourceLandingLayer;
     if (landingLayerStr.empty()) {
         PDN_FATAL("CircuitDecorator::addVoltageSourceFromConfig: "
                   "voltageSourceLandingLayer is empty in DecoratorConfig.");
     }
-    // Convert landingLayer to IdString -- adapt to your IdString API.
+    // Convert landingLayer to IdString -- adapt to your IdString API
     const IdString landingLayerId(landingLayerStr);
 
     // Open configuration file
@@ -87,14 +87,14 @@ void CircuitDecorator::addVoltageSourceFromConfig(
 
     // Per-node aggregation info so that if multiple voltage sources map to the
     // same PDN node we can reduce the *equivalent* package resistance:
-    // R_eq = R_user / N.
+    // R_eq = R_user / N
     struct NodeVsrcInfo {
         std::size_t vsrcCount = 0; // how many Vsrcs ended up on this node
         std::size_t pkgResIdx = 0; // index into graph.mPkgResistors
         IdString    pkgNode;       // package-side node name of that resistor
     };
 
-    // Keyed by *PDN node name* (IdString).
+    // Keyed by *PDN node name* (IdString)
     IdString::Map<NodeVsrcInfo> nodeInfoMap;
 
     // Helper: iterate over graph.mNodes
@@ -112,21 +112,21 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             const Node&     node     = kv.second;
 
             if (node.net.get() < 0) {
-                // Skip nodes with invalid net index.
+                // Skip nodes with invalid net index
                 continue;
             }
 
-            // Map node.mNet (int32) -> NetKey.
+            // Map node.mNet (int32) -> NetKey
             NetId  nid(node.net);
             NetKey nk = graph.netKey(nid);
 
-            // Filter by landing layer.
+            // Filter by landing layer
             if (nk.layer != landingLayerId) continue;
 
-            // Filter by net name.
+            // Filter by net name
             if (nk.netName != netNameId) continue;
 
-            // Compute squared distance in [um^2].
+            // Compute squared distance in [um^2]
             const Tick        dx = node.x - xTick;
             const Tick        dy = node.y - yTick;
             const long double d2 =
@@ -221,13 +221,13 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             continue;
         }
 
-        // 2) Create / update package resistor for this node.
+        // 2) Create / update package resistor for this node
         //
         //    We maintain one *logical* package resistor per PDN node, and if
         //    multiple voltage sources land on the same node, we shrink the
         //    effective resistance:
         //        R_eq = R_user / N
-        //    where N is how many sources ended up on this PDN node.
+        //    where N is how many sources ended up on this PDN node
         //
         //    Topology used (conceptual):
         //
@@ -240,16 +240,16 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         //    - (global ideal node) is a synthetic node name per net
         //      (e.g., "<net>_IDEAL")
 
-        // (a) Lookup or create aggregation info for this PDN node.
+        // (a) Lookup or create aggregation info for this PDN node
         auto itInfo = nodeInfoMap.find(closestNodeName);
         if (itInfo == nodeInfoMap.end()) {
-            // First voltage source landing on this PDN node.
+            // First voltage source landing on this PDN node
             NodeVsrcInfo info;
 
             info.vsrcCount = 1;
 
-            // Package-side node name for this PDN node.
-            // Feel free to change the naming scheme if you have conventions.
+            // Package-side node name for this PDN node
+            // Feel free to change the naming scheme if you have conventions
             const std::string pkgNodeStr = closestNodeName.str() + "_PKG";
             info.pkgNode                 = IdString(pkgNodeStr);
 
@@ -267,8 +267,8 @@ void CircuitDecorator::addVoltageSourceFromConfig(
 
             itInfo = nodeInfoMap.emplace(closestNodeName, info).first;
         } else {
-            // Another voltage source is attached to the *same* PDN node.
-            // Increase count and shrink equivalent R accordingly.
+            // Another voltage source is attached to the *same* PDN node
+            // Increase count and shrink equivalent R accordingly
             NodeVsrcInfo& info = itInfo->second;
             ++info.vsrcCount;
 
@@ -279,19 +279,19 @@ void CircuitDecorator::addVoltageSourceFromConfig(
 
         NodeVsrcInfo& info = itInfo->second;
 
-        // 3) Create the voltage source itself.
+        // 3) Create the voltage source itself
         //
         //    We connect:
         //      (global ideal node for <net>)  <->  (package-side node)
         //
         //    The actual voltage value (mV) is not specified by
         //    DecoratorConfig, so we leave it at 0.0 here. You can later sweep
-        //    or set it according to your analysis needs.
+        //    or set it according to your analysis needs
         //
         //    If your solver expects a different topology (for example a Vsrc
         //    directly between (PDN node) and some global node, with the
         //    package resistor handled elsewhere), modify mFromNode/mToNode
-        //    wiring here accordingly.
+        //    wiring here accordingly
 
         Vsrc              vsrc;
         const std::string vsrcName = "VSRC_" + std::to_string(vsrcCounter);
@@ -331,7 +331,7 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
     }
     const NetKey netKey = graph.netKey(netId);
 
-    // Full filter with type info.
+    // Full filter with type info
     if (!mNetFilter.allows(netKey.netName, netKey.isPower, netKey.isGround)) {
         return;
     }

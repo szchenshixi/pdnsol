@@ -80,8 +80,8 @@ void mergeParallelResistors(std::vector<ResT>& resVec) {
         Agg&            agg = kv.second;
 
         ResT merged = agg.exemplar; // start from exemplar to keep metadata
-        merged.n1  = key.a;
-        merged.n2  = key.b;
+        merged.n1   = key.a;
+        merged.n2   = key.b;
 
         if (agg.hasZero) {
             merged.R = 0.0;
@@ -89,7 +89,7 @@ void mergeParallelResistors(std::vector<ResT>& resVec) {
             merged.R = 1.0 / agg.Gsum;
         } else {
             // No valid conductance accumulated: should only happen
-            // if everything was dropped; skip in that case.
+            // if everything was dropped; skip in that case
             continue;
         }
 
@@ -122,8 +122,7 @@ void mergeParallelIsrcs(std::vector<Isrc>& isrcs, double absTol = 1e-18) {
         }
 
         // Determine orientation relative to canonical pair
-        double sign =
-          (key.a == s.fromNode && key.b == s.toNode) ? 1.0 : -1.0;
+        double sign = (key.a == s.fromNode && key.b == s.toNode) ? 1.0 : -1.0;
         agg.Isigned += sign * s.I;
     }
 
@@ -158,7 +157,7 @@ void dedupVsrcs(std::vector<Vsrc>& vsrcs, double eps = 1e-9) {
         bool   haveCanonical = false;
         double Vcanon        = 0.0; // voltage from a->b (where (a,b)=NodePair)
         Vsrc   representative{};
-        // We also store conflicting ones separately.
+        // We also store conflicting ones separately
         std::vector<Vsrc> conflicts;
     };
 
@@ -274,10 +273,10 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
     }
 
     Node newNode;
-    newNode.name      = name;
-    newNode.net       = NetId(net);
-    newNode.x         = x ? FPN::toRep(*x) : -1;
-    newNode.y         = y ? FPN::toRep(*y) : -1;
+    newNode.name       = name;
+    newNode.net        = NetId(net);
+    newNode.x          = x ? FPN::toRep(*x) : -1;
+    newNode.y          = y ? FPN::toRep(*y) : -1;
     auto [insertIt, _] = mNodes.emplace(name, std::move(newNode));
     return insertIt->second;
 }
@@ -379,12 +378,12 @@ std::size_t CircuitGraph::purgeIsolatedNodes() {
 
     using DegreeT = std::uint32_t;
 
-    // Degree map for existing nodes only.
+    // Degree map for existing nodes only
     IdString::Map<DegreeT> degree;
     degree.reserve(mNodes.size());
 
     // Assumption: NodeMap is keyed by node name (IdString), matching element
-    // endpoints.
+    // endpoints
     for (const auto& kv : mNodes) {
         degree.emplace(kv.first, DegreeT{0});
     }
@@ -399,7 +398,7 @@ std::size_t CircuitGraph::purgeIsolatedNodes() {
         // nodes.)
     };
 
-    // Count incident edges for each node.
+    // Count incident edges for each node
     for (const auto& e : mMetalResistors) {
         bumpIfPresent(e.n1);
         bumpIfPresent(e.n2);
@@ -421,7 +420,7 @@ std::size_t CircuitGraph::purgeIsolatedNodes() {
         bumpIfPresent(e.toNode);
     }
 
-    // Remove nodes with degree 0.
+    // Remove nodes with degree 0
     std::size_t removed = 0;
     for (auto it = mNodes.begin(); it != mNodes.end();) {
         const IdString& nodeName = it->first;

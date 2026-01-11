@@ -31,12 +31,12 @@ CircuitGraph CircuitCoarsener::build() {
     initLayerModes();
     classifyNodeModes();
 
-    // Build resistive network first (this will create coarse nodes).
+    // Build resistive network first (this will create coarse nodes)
     buildMetalResistors();
     buildViaResistors();
     buildPkgResistors();
 
-    // Then remap all sources.
+    // Then remap all sources
     buildVsrcs();
     buildIsrcs();
 
@@ -65,10 +65,10 @@ void CircuitCoarsener::computeBoundingBox() {
 }
 
 void CircuitCoarsener::computeTileSize() {
-    // Requested tile size is in micrometers.
+    // Requested tile size is in micrometers
     ScalarType tileSizeUm = (mCfg.tileSizeUm > 0.0) ? mCfg.tileSizeUm : 100.0;
 
-    // Tick is documented as "micro meters, 1e-6 m".
+    // Tick is documented as "micro meters, 1e-6 m"
     ScalarType tileSizeTicks = tileSizeUm;
     if (mIn.mCoordinateUnit == CircuitGraph::MM) {
         // Coordinates are in mm; convert tile size to same unit:
@@ -76,7 +76,7 @@ void CircuitCoarsener::computeTileSize() {
         tileSizeTicks = tileSizeUm / 1000.0;
     }
 
-    // At least 1 tick.
+    // At least 1 tick
     mTileSizeTicks = FPN::toRep(tileSizeTicks);
 }
 
@@ -97,10 +97,10 @@ detail::TileKey CircuitCoarsener::computeTileKey(const Node& n) const {
 // -----------------------------------------------------------------------------
 
 void CircuitCoarsener::initLayerModes() {
-    // Start from user overrides.
+    // Start from user overrides
     mLayerMode = mCfg.perLayerMode;
 
-    // Any MetalRes layer not explicitly mentioned gets default Approximate.
+    // Any MetalRes layer not explicitly mentioned gets default Approximate
     for (const auto& r : mIn.mMetalResistors) {
         if (mLayerMode.find(r.name) == mLayerMode.end()) {
             mLayerMode[r.name] = LayerMode::Approximate;
@@ -109,12 +109,12 @@ void CircuitCoarsener::initLayerModes() {
 }
 
 void CircuitCoarsener::classifyNodeModes() {
-    // Initialize all nodes as Unknown.
+    // Initialize all nodes as Unknown
     for (const auto& kv : mIn.mNodes) {
         mNodeMode.emplace(kv.first, detail::NodeMode::Unknown);
     }
 
-    // Mark nodes touched by metal resistors.
+    // Mark nodes touched by metal resistors
     for (const auto& r : mIn.mMetalResistors) {
         LayerMode layerMode = LayerMode::Approximate;
         auto      it        = mLayerMode.find(r.name);
@@ -131,7 +131,7 @@ void CircuitCoarsener::classifyNodeModes() {
     }
 
     // Any remaining Unknown nodes (only vias / sources / package, no metal)
-    // are treated as Accurate so we don't accidentally collapse pins, etc.
+    // are treated as Accurate so we don't accidentally collapse pins, etc
     for (auto& kv : mNodeMode) {
         if (kv.second == detail::NodeMode::Unknown) {
             kv.second = detail::NodeMode::Accurate;
@@ -153,7 +153,7 @@ void CircuitCoarsener::bumpNodeMode(IdString         nodeId,
                newMode == detail::NodeMode::Accurate) {
         cur = newMode; // Accurate wins over Approximate
     }
-    // If already Accurate, keep it Accurate.
+    // If already Accurate, keep it Accurate
 }
 
 // -----------------------------------------------------------------------------
@@ -183,7 +183,7 @@ IdString CircuitCoarsener::mapNode(IdString inId) {
 }
 
 IdString CircuitCoarsener::createAccurateNode(IdString inId) {
-    // Check if we already created it.
+    // Check if we already created it
     auto mapIt = mNodeMap.find(inId);
     if (mapIt != mNodeMap.end()) {
         return mapIt->second;
@@ -195,7 +195,7 @@ IdString CircuitCoarsener::createAccurateNode(IdString inId) {
 
     const Node& inNode = nodeIt->second;
 
-    // We reuse the same IdString as the original node name.
+    // We reuse the same IdString as the original node name
     IdString outId   = inId;
     Node     outNode = inNode; // copy geometry, net, etc.
 
@@ -205,7 +205,7 @@ IdString CircuitCoarsener::createAccurateNode(IdString inId) {
 }
 
 IdString CircuitCoarsener::createCoarseNode(IdString inId) {
-    // If this fine node has already been mapped, reuse.
+    // If this fine node has already been mapped, reuse
     auto mapIt = mNodeMap.find(inId);
     if (mapIt != mNodeMap.end()) {
         return mapIt->second;
@@ -218,7 +218,7 @@ IdString CircuitCoarsener::createCoarseNode(IdString inId) {
     const Node&     inNode = nodeIt->second;
     detail::TileKey key    = computeTileKey(inNode);
 
-    // Check if this tile already has a coarse node.
+    // Check if this tile already has a coarse node
     auto tileIt = mTileNodeMap.find(key);
     if (tileIt != mTileNodeMap.end()) {
         IdString coarseId = tileIt->second;
@@ -226,7 +226,7 @@ IdString CircuitCoarsener::createCoarseNode(IdString inId) {
         return coarseId;
     }
 
-    // Create a brand-new coarse node for this tile.
+    // Create a brand-new coarse node for this tile
     IdString coarseId("COARSE_" + std::to_string(key.net) + "_" +
                       std::to_string(key.tx) + "_" + std::to_string(key.ty));
 
@@ -234,7 +234,7 @@ IdString CircuitCoarsener::createCoarseNode(IdString inId) {
     coarseNode.name = coarseId;
     coarseNode.net  = inNode.net;
 
-    // Place coarse node at the tile center.
+    // Place coarse node at the tile center
     coarseNode.x =
       mMinX + static_cast<Tick>(key.tx * mTileSizeTicks + mTileSizeTicks / 2);
     coarseNode.y =
@@ -259,23 +259,23 @@ void CircuitCoarsener::buildMetalResistors() {
 
     for (const auto& r : mIn.mMetalResistors) {
         // Decide how the endpoints map (accurate vs coarse) based on node
-        // mode.
+        // mode
         IdString n1 = mapNode(r.n1);
         IdString n2 = mapNode(r.n2);
 
         if (n1 == n2) {
-            // Entire segment collapsed inside one tile; drop.
+            // Entire segment collapsed inside one tile; drop
             // Physically, this is sub-tile detail which we ignore at coarse
-            // scale.
+            // scale
             continue;
         }
 
         MetalRes cr = r;
-        cr.n1      = n1;
-        cr.n2      = n2;
+        cr.n1       = n1;
+        cr.n2       = n2;
 
         // We keep cr.name and cr.mNet unchanged; the layer identity is
-        // preserved.
+        // preserved
         out.mMetalResistors.push_back(std::move(cr));
     }
 }
@@ -292,13 +292,13 @@ void CircuitCoarsener::buildViaResistors() {
 
         if (n1 == n2) {
             // Via endpoints collapsed into same coarse node (local vertical
-            // connection within a tile); ignore at this scale.
+            // connection within a tile); ignore at this scale
             continue;
         }
 
         ViaRes cv = v;
-        cv.n1    = n1;
-        cv.n2    = n2;
+        cv.n1     = n1;
+        cv.n2     = n2;
         out.mViaResistors.push_back(std::move(cv));
     }
 }
@@ -316,8 +316,8 @@ void CircuitCoarsener::buildPkgResistors() {
         if (n1 == n2) continue;
 
         PkgRes cp = p;
-        cp.n1    = n1;
-        cp.n2    = n2;
+        cp.n1     = n1;
+        cp.n2     = n2;
         out.mPkgResistors.push_back(std::move(cp));
     }
 }
@@ -337,11 +337,11 @@ void CircuitCoarsener::buildVsrcs() {
         IdString to   = mapNode(vs.toNode);
 
         if (from == to) {
-            // Source between same node is ineffective; drop.
+            // Source between same node is ineffective; drop
             continue;
         }
 
-        Vsrc nvs      = vs;
+        Vsrc nvs     = vs;
         nvs.fromNode = from;
         nvs.toNode   = to;
         out.mVsrcs.push_back(std::move(nvs));
@@ -362,7 +362,7 @@ void CircuitCoarsener::buildIsrcs() {
             continue;
         }
 
-        Isrc nis      = is;
+        Isrc nis     = is;
         nis.fromNode = from;
         nis.toNode   = to;
         out.mIsrcs.push_back(std::move(nis));

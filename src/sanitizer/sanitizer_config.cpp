@@ -15,7 +15,7 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
     // Helper lambdas
     // -------------------------------------------------------------------------
 
-    // Require that an object field exists and is itself a JSON object.
+    // Require that an object field exists and is itself a JSON object
     auto requireObject = [&](const Json&        parent,
                              const char*        key,
                              const std::string& context) -> const Json* {
@@ -39,7 +39,7 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
         return &child;
     };
 
-    // Require that a field exists and is an array (optionally non-empty).
+    // Require that a field exists and is an array (optionally non-empty)
     auto requireArray = [&](const Json&        parent,
                             const char*        key,
                             const std::string& context,
@@ -67,12 +67,12 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
                       filePath.c_str(),
                       context.c_str());
             result = false;
-            // We still return it so caller can iterate if desired.
+            // We still return it so caller can iterate if desired
         }
         return &arr;
     };
 
-    // Require that a field exists, is a string, and is not empty.
+    // Require that a field exists, is a string, and is not empty
     auto requireNonEmptyString =
       [&](const Json&        obj,
           const char*        key,
@@ -108,8 +108,8 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
         return value;
     };
 
-    // Require that a field exists, is numeric, and >= 0.0.
-    // If it's exactly 0.0, only emit a warning.
+    // Require that a field exists, is numeric, and >= 0.0
+    // If it's exactly 0.0, only emit a warning
     auto requireNonNegativeNumber = [&](const Json&        obj,
                                         const char*        key,
                                         const std::string& context) -> double {
@@ -150,7 +150,7 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
     };
 
     // Require that a field exists, is a string, is not empty, and points to an
-    // existing file on disk.
+    // existing file on disk
     auto requireExistingFile =
       [&](const Json& obj, const char* key, const std::string& context) {
           std::string path = requireNonEmptyString(obj, key, context);
@@ -425,7 +425,7 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
     // -------------------------------------------------------------------------
     if (simJ) {
         // Integers in JSON are also numbers, so requireNonNegativeNumber is
-        // OK.
+        // OK
 
         // grid_Nx >= 0.0, warn if 0
         // requireNonNegativeNumber(*simJ, "grid_Nx", "simulation.grid_Nx");

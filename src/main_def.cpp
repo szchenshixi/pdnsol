@@ -198,10 +198,10 @@ int main(int argc, char** argv) {
     // ============================================================
     //   - Build sparse conductance matrix G from mMetalResistors +
     //   mViaResistors + mTsvResistors + mPkgResistors
-    //   - Treat bump nodes as Dirichlet BCs (VDD/VSS).
-    //   - Aggregate load currents per (net,layer,tile) node into I vector.
+    //   - Treat bump nodes as Dirichlet BCs (VDD/VSS)
+    //   - Aggregate load currents per (net,layer,tile) node into I vector
     //   - Solve G V = I (e.g., with CG/PCG) and extract coarse IR-drop
-    //   heatmap.
+    //   heatmap
 
     {
         PERF_STATS("Solving coarse circuit");

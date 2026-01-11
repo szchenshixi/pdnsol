@@ -26,21 +26,21 @@ ProgramStats::ProgramStats(const char* label)
 }
 
 ProgramStats::~ProgramStats() {
-    const auto wallEnd = std::chrono::steady_clock::now();
+    const auto   wallEnd = std::chrono::steady_clock::now();
     const double wallSec =
       std::chrono::duration_cast<std::chrono::duration<double>>(wallEnd -
                                                                 mWallStart)
         .count();
 
-    const double cpuSec = getCpuSeconds();
+    const double cpuSec   = getCpuSeconds();
     const double maxRssMb = getMaxRssMb();
 
     // [label] wall_time=...s cpu_time=...s peakMemUsage=...MB
     PDN_INFO("[%s] wall_time=%.3fs cpu_time=%.3fs peakMemUsage=%.1fMB",
-            mLabel,
-            wallSec,
-            cpuSec,
-            maxRssMb);
+             mLabel,
+             wallSec,
+             cpuSec,
+             maxRssMb);
 }
 
 #if PERF_STATS_PLATFORM_WINDOWS
@@ -50,7 +50,7 @@ using Tick = ProgramStats::Tick;
 
 Tick filetimeToTicks(const FILETIME& fileTime) {
     ULARGE_INTEGER ui;
-    ui.LowPart = fileTime.dwLowDateTime;
+    ui.LowPart  = fileTime.dwLowDateTime;
     ui.HighPart = fileTime.dwHighDateTime;
     return static_cast<Tick>(ui.QuadPart);
 }
@@ -64,7 +64,7 @@ void ProgramStats::initCpuStart() {
                         &kernelTime,
                         &userTime)) {
         mCpuStartKernel = filetimeToTicks(kernelTime);
-        mCpuStartUser = filetimeToTicks(userTime);
+        mCpuStartUser   = filetimeToTicks(userTime);
     }
 }
 
@@ -76,7 +76,7 @@ double ProgramStats::getCpuSeconds() const {
                         &kernelTime,
                         &userTime)) {
         const Tick kernel = filetimeToTicks(kernelTime) - mCpuStartKernel;
-        const Tick user = filetimeToTicks(userTime) - mCpuStartUser;
+        const Tick user   = filetimeToTicks(userTime) - mCpuStartUser;
         // FILETIME units: 100-ns ticks
         return static_cast<double>(kernel + user) * 1e-7;
     }
@@ -101,7 +101,7 @@ double ProgramStats::getMaxRssMb() const {
 namespace {
 ProgramStats::CpuTimes readCpuTimes() {
     ProgramStats::CpuTimes cpuTimes;
-    rusage resourceUsage{};
+    rusage                 resourceUsage{};
     if (getrusage(RUSAGE_SELF, &resourceUsage) == 0) {
         cpuTimes.userSec =
           resourceUsage.ru_utime.tv_sec + resourceUsage.ru_utime.tv_usec / 1e6;

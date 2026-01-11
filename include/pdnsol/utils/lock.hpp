@@ -50,9 +50,9 @@ class RwLock {
         m_cv.notify_all();
     }
 
-    static const size_t kWriterBit = size_t(1) << (sizeof(size_t) * 8 - 1);
-    static const size_t kMaxReaders = kWriterBit - 1;
-    std::mutex m_counterMutex;
+    static const size_t     kWriterBit = size_t(1) << (sizeof(size_t) * 8 - 1);
+    static const size_t     kMaxReaders = kWriterBit - 1;
+    std::mutex              m_counterMutex;
     std::condition_variable m_cv;
     size_t m_counter; // MSB, i.e. writer bit, acts as a "mutex"
 };

@@ -4,39 +4,39 @@
 
 namespace pdnsol {
 // User API
-#define PDN_DEBUG(...)       \
+#define PDN_DEBUG(...)      \
     Logger::instance().log( \
       Logger::Level::Debug, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define PDN_INFO(...)        \
+#define PDN_INFO(...)       \
     Logger::instance().log( \
       Logger::Level::Info, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define PDN_WARN(...)        \
+#define PDN_WARN(...)       \
     Logger::instance().log( \
       Logger::Level::Warning, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define PDN_ERROR(...)       \
+#define PDN_ERROR(...)      \
     Logger::instance().log( \
       Logger::Level::Error, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define PDN_FATAL(...) \
     Logger::instance().fatal(__FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 #define PDN_DEBUG_IF(condition, ...) \
-    if (condition)                  \
-    Logger::instance().log(         \
+    if (condition)                   \
+    Logger::instance().log(          \
       Logger::Level::Debug, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define PDN_INFO_IF(condition, ...) \
-    if (condition)                 \
-    Logger::instance().log(        \
-      Logger::Level::Info, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define PDN_WARN_IF(condition, ...) \
-    if (condition)                 \
-    Logger::instance().log(        \
-      Logger::Level::Warning, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
-#define PDN_ERROR_IF(condition, ...) \
     if (condition)                  \
     Logger::instance().log(         \
+      Logger::Level::Info, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define PDN_WARN_IF(condition, ...) \
+    if (condition)                  \
+    Logger::instance().log(         \
+      Logger::Level::Warning, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
+#define PDN_ERROR_IF(condition, ...) \
+    if (condition)                   \
+    Logger::instance().log(          \
       Logger::Level::Error, __FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 #define PDN_FATAL_IF(condition, ...) \
-    if (condition)                  \
+    if (condition)                   \
     Logger::instance().fatal(__FILE__, __LINE__, __FUNCTION__, __VA_ARGS__)
 
 // Debug-time assertion. Disabled when NDEBUG is defined (release builds).
@@ -46,7 +46,7 @@ void assertFail(const char* expr, const char* file, int line,
 
 void assertFail(const char* expr, const char* file, int line,
                 const char* function, const char* fmt, ...);
-#define PDN_ASSERT(condition, ...)                                           \
+#define PDN_ASSERT(condition, ...)                                          \
     do {                                                                    \
         if (!(condition)) {                                                 \
             ssAssertFail(                                                   \
@@ -86,4 +86,4 @@ class Logger {
     mutable std::mutex mMutex;
     bool               mInitialized = false;
 };
-}
+} // namespace pdnsol

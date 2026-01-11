@@ -39,7 +39,7 @@ int main() {
     cfg.tileSizeUm = 200000.0;
 
     // Suppose your MetalRes::mName for layers are something like:
-    // "M1_VDD", "M2_VDD", ..., "M9_VDD", and similarly for VSS.
+    // "M1_VDD", "M2_VDD", ..., "M9_VDD", and similarly for VSS
 
     // Mark bottom rails accurate:
     // cfg.perLayerMode[IdString("M1_VDD")] = LayerMode::Accurate;
@@ -49,7 +49,7 @@ int main() {
     // cfg.perLayerMode[IdString("M9_VDD")] = LayerMode::Accurate;
     // cfg.perLayerMode[IdString("M9_VSS")] = LayerMode::Accurate;
 
-    // All other layers (M2..M8 for both rails) default to Approximate.
+    // All other layers (M2..M8 for both rails) default to Approximate
 
     CircuitCoarsener coarsener(fcirc, cfg);
     CircuitGraph     ccirc = coarsener.build();

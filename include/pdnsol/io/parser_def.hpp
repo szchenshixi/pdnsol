@@ -80,7 +80,7 @@ struct ConductanceGrid3D {
     int bottomLayerIdx = -1;
     int topLayerIdx    = -1;
 
-    // Dimensions of the bottom/top layer grids for this via connection.
+    // Dimensions of the bottom/top layer grids for this via connection
     int nxB = 0, nyB = 0; // bottom layer grid dims
     int nxT = 0, nyT = 0; // top layer grid dims
 
@@ -88,7 +88,7 @@ struct ConductanceGrid3D {
 
     // key = (bottomFlat << 32) | topFlat
     // value = total conductance (Siemens) between those two tiles, before
-    // scaling.
+    // scaling
     std::unordered_map<std::uint64_t, double> edgeG;
 
     void init(int netIdx, int lb, int lt, int nxB, int nyB, int nxT, int nyT,
@@ -230,7 +230,7 @@ class CoarsePdnBuilder3D {
     void initInPlaneGrids();
 
     // Clear per-build state so each call to buildCoarsePdnFromDef()
-    // starts with a clean slate.
+    // starts with a clean slate
     void resetForNewBuild();
 
     // -----------------------------------------------------------------
@@ -238,22 +238,22 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
 
     std::vector<int> selectNetIndices(const NetFilter& filter) const;
-    bool isNetSelected(int netIndex) const noexcept;
-    void setNetSelectedMask(const std::vector<int>& netIndices);
+    bool             isNetSelected(int netIndex) const noexcept;
+    void             setNetSelectedMask(const std::vector<int>& netIndices);
 
     // -----------------------------------------------------------------
     // Helpers for SPECIALNETS routing
     // -----------------------------------------------------------------
 
     // Parse a DEF point: "( x y )"
-    // Supports '*' meaning "same as previous value" on that axis.
+    // Supports '*' meaning "same as previous value" on that axis
     static bool parseDefPoint(const std::vector<std::string>& tokens,
                               std::size_t startIdx, int prevX, int prevY,
                               int& x, int& y, std::size_t& consumed);
 
     // Convert a routed segment into a rectangle and feed it into the existing
     // rectangle-based PDN builder. widthDbu is the wire width from
-    // "ROUTED/NEW" (in DBU).
+    // "ROUTED/NEW" (in DBU)
     void recordStripeFromSegment(const std::string& netName,
                                  const std::string& layerName, int x0, int y0,
                                  int x1, int y1, int widthDbu);
@@ -326,22 +326,22 @@ class CoarsePdnBuilder3D {
     void buildCircuitGraph(CircuitGraph&           graph,
                            const std::vector<int>& netIndices);
 
-    // Parse RECT coordinates from token stream.
+    // Parse RECT coordinates from token stream
     // Supports:
     //   RECT x0 y0 x1 y1
     //   RECT ( x0 y0 ) ( x1 y1 )
-    // startIdx points to the token immediately after "RECT".
+    // startIdx points to the token immediately after "RECT"
     // On success, 'consumed' is the number of tokens eaten starting at
-    // startIdx.
+    // startIdx
     bool parseRectFromTokens(const std::vector<std::string>& tokens,
                              std::size_t startIdx, int& x0, int& y0, int& x1,
                              int& y1, std::size_t& consumed) const;
 
-    // Parse VIA placement from token stream.
+    // Parse VIA placement from token stream
     // Supports:
     //   VIA viaName x y
     //   VIA viaName ( x y )
-    // startIdx points to the token immediately after "VIA".
+    // startIdx points to the token immediately after "VIA"
     bool parseViaFromTokens(const std::vector<std::string>& tokens,
                             std::size_t startIdx, std::string& viaName, int& x,
                             int& y, std::size_t& consumed) const;
@@ -371,7 +371,7 @@ class CoarsePdnBuilder3D {
     // num_nets * num_layers
     int mNumNetLayerComb = 0;
 
-    // Per-build selection mask (size=mNumNets). If empty => treat as "all".
+    // Per-build selection mask (size=mNumNets). If empty => treat as "all"
     std::vector<std::uint8_t> mNetSelectedMask;
 
     // DEF geometry

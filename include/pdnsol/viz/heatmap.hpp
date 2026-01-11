@@ -60,7 +60,7 @@ namespace pdnsol {
 // -------------------------
 
 struct IRDropHeatmapConfig {
-    // Output resolution (same for all nets).
+    // Output resolution (same for all nets)
     int width  = 32;
     int height = 32;
 
@@ -73,7 +73,7 @@ struct IRDropHeatmapConfig {
     double maxX          = 0.0;
     double maxY          = 0.0;
 
-    // Metric to visualize.
+    // Metric to visualize
     //   IR_DROP:
     //       For VDD nets:  vddNominal - Vnode  (drop > 0 means worse)
     //       For VSS nets:  Vnode - vssNominal  (bounce > 0 means worse)
@@ -87,11 +87,11 @@ struct IRDropHeatmapConfig {
     double vddNominal = 1.0; // e.g. 1.0 V
     double vssNominal = 0.0; // e.g. 0.0 V
 
-    // Filters for which nets to include.
+    // Filters for which nets to include
     bool includeVdd = true; // nets with netId % 2 == 0
     bool includeVss = true; // nets with netId % 2 == 1
 
-    // Optional filter: layer indices to include.
+    // Optional filter: layer indices to include
     // If empty, all layers are included
     std::vector<IdString> includedLayers;
 };

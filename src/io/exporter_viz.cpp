@@ -103,7 +103,7 @@ void exportCircuitGraphForVizJson(const CircuitGraph& c,
         const char* subtype = (s.type == Vsrc::GLOBAL)    ? "global"
                               : (s.type == Vsrc::VIA)     ? "via"
                               : (s.type == Vsrc::PACKAGE) ? "package"
-                                                           : "other";
+                                                          : "other";
 
         j["edges"].push_back({{"id", s.name.c_str()},
                               {"type", "vsrc"},

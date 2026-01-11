@@ -57,8 +57,8 @@ bool startsWithIgnoreCase(const std::string& s, const std::string& prefix) {
 
 std::vector<std::string> splitWhitespace(const std::string& line) {
     std::vector<std::string> tokens;
-    std::string cur;
-    bool inToken = false;
+    std::string              cur;
+    bool                     inToken = false;
     for (char c : line) {
         if (std::isspace(static_cast<unsigned char>(c))) {
             if (inToken) {
@@ -77,7 +77,7 @@ std::vector<std::string> splitWhitespace(const std::string& line) {
 
 std::vector<std::string> splitOnChar(const std::string& s, char delim) {
     std::vector<std::string> out;
-    std::size_t start = 0;
+    std::size_t              start = 0;
     for (std::size_t i = 0; i <= s.size(); ++i) {
         if (i == s.size() || s[i] == delim) {
             if (i > start) {
@@ -108,18 +108,18 @@ ParsedNode parsePdNodeName(const std::string& raw, int32_t coordToMircoScale) {
 
     // Detect your PDN convention: n<net>_<x>_<y>
     if (raw.size() > 1 && (raw[0] == 'n' || raw[0] == 'N')) {
-        std::string rest = raw.substr(1); // drop leading 'n'
-        auto parts = splitOnChar(rest, '_');
+        std::string rest  = raw.substr(1); // drop leading 'n'
+        auto        parts = splitOnChar(rest, '_');
         if (parts.size() == 3) {
             try {
-                int32_t net = static_cast<int32_t>(std::stoi(parts[0]));
-                double x = std::stod(parts[1]);
-                double y = std::stod(parts[2]);
-                out.mNet = net;
+                int32_t net  = static_cast<int32_t>(std::stoi(parts[0]));
+                double  x    = std::stod(parts[1]);
+                double  y    = std::stod(parts[2]);
+                out.mNet     = net;
                 out.mXMicros = x * coordToMircoScale;
                 out.mYMicros = y * coordToMircoScale;
             } catch (...) {
-                // If parsing fails, leave netIndex/x/y as defaults.
+                // If parsing fails, leave netIndex/x/y as defaults
             }
         }
     }

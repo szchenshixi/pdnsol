@@ -28,7 +28,7 @@ std::string unquote(const std::string& s) {
 //   * "*12" (name-map id)
 //   * "*12:A" (name-map id plus delimiter and pin)
 std::string
-resolveSpefName(const std::string& token,
+resolveSpefName(const std::string&                          token,
                 const std::unordered_map<int, std::string>& nameMap) {
     if (token.empty()) return token;
 
@@ -74,10 +74,12 @@ double parseRUnitScale(const std::vector<std::string>& tokens) {
     double scale = 1.0;
     try {
         scale = std::stod(tokens[1]);
-    } catch (...) { scale = 1.0; }
+    } catch (...) {
+        scale = 1.0;
+    }
 
     std::string unit = toLower(tokens[2]);
-    double base = 1.0;
+    double      base = 1.0;
     if (unit == "ohm") base = 1.0;
     else if (unit == "kohm") base = 1e3;
     else if (unit == "mohm") base = 1e6;
@@ -100,16 +102,16 @@ enum class TopSection {
 enum class NetSubSection { NONE, CONN, CAP, RES };
 
 struct SpefState {
-    TopSection topSection = TopSection::NONE;
+    TopSection    topSection = TopSection::NONE;
     NetSubSection netSection = NetSubSection::NONE;
 
     // Name mapping *id -> string
     std::unordered_map<int, std::string> nameMap;
 
     // Current net context
-    bool inNet = false;
+    bool        inNet = false;
     std::string currentNetName; // resolved textual net name
-    double currentNetTotalCap = 0.0;
+    double      currentNetTotalCap = 0.0;
 
     // Resistance unit scaling to ohms
     double rUnitScale = 1.0;
@@ -118,28 +120,28 @@ struct SpefState {
 // For each *D_NET, push a SectionMeta entry if desired.
 void recordNetSection(CircuitGraph& circ, const SpefState& st) {
     SectionMeta meta;
-    meta.type = IdString("net");
-    meta.name = IdString(st.currentNetName);
-    meta.net = IdString(st.currentNetName);
+    meta.type    = IdString("net");
+    meta.name    = IdString(st.currentNetName);
+    meta.net     = IdString(st.currentNetName);
     meta.fromNet = IdString(""); // not used
-    meta.toNet = IdString("");   // not used
-    meta.raw = "";     // could store full "*D_NET" line if needed
+    meta.toNet   = IdString(""); // not used
+    meta.raw     = "";           // could store full "*D_NET" line if needed
     circ.mSections.push_back(std::move(meta));
 }
 
 // Create MetalRes from SPEF *RES line.
 void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
                          const std::vector<std::string>& tokens,
-                         int32_t coordToMircoScale) {
+                         int32_t                         coordToMircoScale) {
     // Format: <idx> <node1> <node2> <R>
     if (tokens.size() < 4) {
         throw std::runtime_error("SPEF *RES entry has fewer than 4 tokens");
     }
 
     const std::string& idxStr = tokens[0];
-    const std::string& n1Tok = tokens[1];
-    const std::string& n2Tok = tokens[2];
-    const std::string& rTok = tokens[3];
+    const std::string& n1Tok  = tokens[1];
+    const std::string& n2Tok  = tokens[2];
+    const std::string& rTok   = tokens[3];
 
     std::string n1Name = resolveSpefName(n1Tok, st.nameMap);
     std::string n2Name = resolveSpefName(n2Tok, st.nameMap);
@@ -159,12 +161,12 @@ void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
     circ.ensureNode(pn1.mId, pn1.mNet, pn1.mXMicros, pn1.mYMicros);
     circ.ensureNode(pn2.mId, pn2.mNet, pn2.mXMicros, pn2.mYMicros);
 
-    MetalRes res;
+    MetalRes    res;
     // Unique-ish name: R_<net>_<idx>
     std::string rName = "R_" + st.currentNetName + "_" + idxStr;
-    res.name = IdString(rName);
-    res.n1 = pn1.mId;
-    res.n2 = pn2.mId;
+    res.name          = IdString(rName);
+    res.n1            = pn1.mId;
+    res.n2            = pn2.mId;
 
     int32_t netIndex = -1;
     if (pn1.mNet >= 0) netIndex = pn1.mNet;
@@ -179,16 +181,18 @@ void addResistorFromSpef(CircuitGraph& circ, const SpefState& st,
 // For CAP entries: only ensure nodes exist; ignore capacitance numeric for DC.
 void ensureNodesFromCap(CircuitGraph& circ, const SpefState& st,
                         const std::vector<std::string>& tokens,
-                        int32_t coordToMircoScale) {
+                        int32_t                         coordToMircoScale) {
     // Ground cap:   <idx> <node> <C>
     // Coupling cap: <idx> <node1> <node2> <C>
-    if (tokens.size() < 3) { return; }
+    if (tokens.size() < 3) {
+        return;
+    }
 
     if (tokens.size() == 3) {
         // <idx> <node> <C>
-        std::string nodeTok = tokens[1];
+        std::string nodeTok  = tokens[1];
         std::string nodeName = resolveSpefName(nodeTok, st.nameMap);
-        ParsedNode pn = parsePdNodeName(nodeName, coordToMircoScale);
+        ParsedNode  pn       = parsePdNodeName(nodeName, coordToMircoScale);
         circ.ensureNode(pn.mId, pn.mNet, pn.mXMicros, pn.mYMicros);
     } else if (tokens.size() >= 4) {
         // <idx> <node1> <node2> <C>
@@ -215,7 +219,7 @@ void handleNameMapEntry(SpefState& st, const std::string& line) {
     auto tokens = splitWhitespace(stripped);
     if (tokens.size() < 2) return;
 
-    const std::string& idTok = tokens[0];
+    const std::string& idTok   = tokens[0];
     const std::string& nameTok = tokens[1];
 
     if (idTok.size() < 2 || idTok[0] != '*' ||
@@ -226,7 +230,9 @@ void handleNameMapEntry(SpefState& st, const std::string& line) {
     int id = 0;
     try {
         id = std::stoi(idTok.substr(1));
-    } catch (...) { return; }
+    } catch (...) {
+        return;
+    }
 
     st.nameMap[id] = unquote(nameTok);
 }
@@ -234,7 +240,7 @@ void handleNameMapEntry(SpefState& st, const std::string& line) {
 // Handle *CONN line: we only ensure nodes exist.
 void handleConnLine(CircuitGraph& circ, const SpefState& st,
                     const std::vector<std::string>& tokens,
-                    int32_t coordToMircoScale) {
+                    int32_t                         coordToMircoScale) {
     // Formats (simplified):
     // *P <node> <dir> ...
     // *I <inst:pin> <dir> ...
@@ -248,7 +254,7 @@ void handleConnLine(CircuitGraph& circ, const SpefState& st,
 
     // Resolve name map
     std::string nodeName = resolveSpefName(nodeTok, st.nameMap);
-    ParsedNode pn = parsePdNodeName(nodeName, coordToMircoScale);
+    ParsedNode  pn       = parsePdNodeName(nodeName, coordToMircoScale);
 
     circ.ensureNode(pn.mId, pn.mNet, pn.mXMicros, pn.mYMicros);
 }
@@ -268,7 +274,7 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
     const int32_t coordToMircoScale =
       (coordUnit == CircuitGraph::UM) ? 1 : 1000;
 
-    SpefState st;
+    SpefState   st;
     std::string line;
     std::size_t lineNumber = 0;
 
@@ -278,7 +284,7 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
         if (stripped.empty()) continue;
 
         // Lines beginning with '*' are section headers, name-map entries, or
-        // connection entries.
+        // connection entries
         if (stripped[0] == '*') {
             auto tokens = splitWhitespace(stripped);
             if (tokens.empty()) continue;
@@ -358,15 +364,17 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
 
                 st.topSection = TopSection::NET;
                 st.netSection = NetSubSection::NONE;
-                st.inNet = true;
+                st.inNet      = true;
 
-                std::string netTok = tokens[1];
+                std::string netTok      = tokens[1];
                 std::string totalCapTok = tokens[2];
 
                 st.currentNetName = resolveSpefName(netTok, st.nameMap);
                 try {
                     st.currentNetTotalCap = std::stod(totalCapTok);
-                } catch (...) { st.currentNetTotalCap = 0.0; }
+                } catch (...) {
+                    st.currentNetTotalCap = 0.0;
+                }
 
                 recordNetSection(circ, st);
                 continue;
@@ -395,7 +403,7 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
                 }
                 if (iequals(key, "*end")) {
                     st.netSection = NetSubSection::NONE;
-                    st.inNet = false;
+                    st.inNet      = false;
                     continue;
                 }
 
@@ -410,11 +418,11 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
                 }
             }
 
-            // Other *something lines are ignored.
+            // Other *something lines are ignored
             continue;
         } // if line starts with '*'
 
-        // Non-'*' lines: these appear in *CAP and *RES sections.
+        // Non-'*' lines: these appear in *CAP and *RES sections
         if (st.topSection == TopSection::NET && st.inNet) {
             auto tokens = splitWhitespace(stripped);
             if (tokens.empty()) continue;
@@ -424,7 +432,7 @@ CircuitGraph parseSpef(std::istream& in, CircuitGraph::Unit coordUnit) {
             } else if (st.netSection == NetSubSection::RES) {
                 addResistorFromSpef(circ, st, tokens, coordToMircoScale);
             } else {
-                // Unexpected; ignore.
+                // Unexpected; ignore
             }
         }
     } // while getline

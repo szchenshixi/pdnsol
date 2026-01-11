@@ -81,7 +81,7 @@ void TechDatabase::addViaGeometryFromDef(
 
     mViaGeometries[viaId] = g;
 
-    // Make sure basic via connectivity exists as TechVia as well.
+    // Make sure basic via connectivity exists as TechVia as well
     auto it = mVias.find(viaId);
     if (it == mVias.end()) {
         TechVia v;

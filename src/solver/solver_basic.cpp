@@ -34,11 +34,11 @@ MNASolution solveMNA(const MNASystem& sys) {
     }
 
     MNASolution sol;
-    sol.mVoltages = std::move(nodeVoltages);
+    sol.mVoltages     = std::move(nodeVoltages);
     sol.mVsrcCurrents = std::move(vsrcCurrents);
-    sol.mXFull = std::move(x);
-    sol.mNodeIndex = sys.mNodeIndex;
-    sol.mVsrcIndex = sys.mVsrcIndex;
+    sol.mXFull        = std::move(x);
+    sol.mNodeIndex    = sys.mNodeIndex;
+    sol.mVsrcIndex    = sys.mVsrcIndex;
     return sol;
 }
 

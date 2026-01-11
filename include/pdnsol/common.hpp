@@ -4,7 +4,7 @@
 namespace pdnsol {
 struct Node;
 
-using IndexType = int64_t;
+using IndexType  = int64_t;
 using ScalarType = double;
 
 // using IntMap = std::unordered_map<IdString, IndexType, IdString::Hash>;

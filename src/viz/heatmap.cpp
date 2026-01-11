@@ -60,7 +60,7 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
 
     if (!std::isfinite(bbox.minX) || !std::isfinite(bbox.minY) ||
         !std::isfinite(bbox.maxX) || !std::isfinite(bbox.maxY)) {
-        // If no valid nodes, fall back to a zero-sized box.
+        // If no valid nodes, fall back to a zero-sized box
         bbox.minX = bbox.minY = 0.0;
         bbox.maxX = bbox.maxY = 0.0;
     }
@@ -71,8 +71,8 @@ LayoutBBox computeLayoutBoundingBox(const CircuitGraph& circ,
 // Make a human-readable label for file naming, e.g. "M3_VDD".
 std::string makeNetLabel(const NetKey& netKey) {
 
-    // NOTE: You can adjust the layer numbering if your M1 is layer=0 or 1.
-    // Here we assume M0 corresponds to layer index 0.
+    // NOTE: You can adjust the layer numbering if your M1 is layer=0 or 1
+    // Here we assume M0 corresponds to layer index 0
     std::ostringstream oss;
     oss << netKey.layer.c_str() << "_" << netKey.netName.c_str();
     return oss.str();
@@ -115,7 +115,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
           "IR-drop heatmap: invalid pixel size (dx/dy <= 0).");
     }
 
-    // Layer filter (optional).
+    // Layer filter (optional)
     IdString::Set<IdString> layerFilter;
     if (!cfg.includedLayers.empty()) {
         layerFilter.insert(cfg.includedLayers.begin(),
@@ -131,22 +131,22 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
         int64_t         solIndex = kv.second;
 
         // We skip GND as it's typically reference (0V) and not a physical node
-        // in the grid for IR-drop visualization. Adjust if needed.
+        // in the grid for IR-drop visualization. Adjust if needed
         if (nodeName == "GND") {
             continue;
         }
 
-        // Find the node in circuit graph to get geometry & netId.
+        // Find the node in circuit graph to get geometry & netId
         auto itNode = circ.mNodes.find(nodeName);
         if (itNode == circ.mNodes.end()) {
-            // Should not happen if the graph and MNA are consistent.
+            // Should not happen if the graph and MNA are consistent
             continue;
         }
         const Node& node = itNode->second;
 
         NetKey netKey = circ.netKey(node.net);
         if (!netKey.layer.valid() || !netKey.netName.valid()) {
-            // Ignore invalid netKey if any.
+            // Ignore invalid netKey if any
             continue;
         }
 
@@ -157,33 +157,33 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
         if (isPower && !cfg.includeVdd) continue;
         if (!isPower && !cfg.includeVss) continue;
 
-        // Apply layer filter (if any).
+        // Apply layer filter (if any)
         if (!layerFilter.empty() &&
             layerFilter.find(netKey.netName) == layerFilter.end()) {
             continue;
         }
 
-        // Convert coordinates to meters and then to pixel indices.
+        // Convert coordinates to meters and then to pixel indices
         double x = FPN::fromRep(node.x);
         double y = FPN::fromRep(node.y);
 
         int ix = static_cast<int>((x - bbox.minX) / dx);
         int iy = static_cast<int>((y - bbox.minY) / dy);
 
-        // Guard against boundary issues (clamp or skip).
+        // Guard against boundary issues (clamp or skip)
         if (ix < 0 || ix >= cfg.width || iy < 0 || iy >= cfg.height) {
-            // Node outside bounding box; ignore.
+            // Node outside bounding box; ignore
             continue;
         }
 
-        // Voltage from MNA solution.
+        // Voltage from MNA solution
         double Vnode = sol.mXFull(solIndex);
 
-        // Metric to be visualized.
+        // Metric to be visualized
         double metric = computeMetric(Vnode, isPower, cfg);
         float  fVal   = static_cast<float>(metric);
 
-        // 3. Get or create heatmap for this netId.
+        // 3. Get or create heatmap for this netId
         auto itHm = heatmaps.find(netKey);
         if (itHm == heatmaps.end()) {
             IRDropHeatmap hm  = makeEmptyHeatmap(bbox, cfg.width, cfg.height);
@@ -196,7 +196,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
           hm.cells[static_cast<size_t>(iy) * static_cast<size_t>(hm.width) +
                    static_cast<size_t>(ix)];
 
-        // 4. Aggregate into the cell.
+        // 4. Aggregate into the cell
         if (fVal < cell.minVal) cell.minVal = fVal;
         if (fVal > cell.maxVal) cell.maxVal = fVal;
         cell.sumVal += metric;
@@ -237,11 +237,11 @@ inline RGB applyColormap(float v, float vmin, float vmax) {
     }
 
     if (vmax <= vmin) {
-        // Avoid division by zero; fallback to mid-gray.
+        // Avoid division by zero; fallback to mid-gray
         return RGB{127, 127, 127};
     }
 
-    // v is normalized between [vmin, vmax].
+    // v is normalized between [vmin, vmax]
     float t = (v - vmin) / (vmax - vmin);
     if (t < 0.0f) t = 0.0f;
     if (t > 1.0f) t = 1.0f;
@@ -473,7 +473,7 @@ inline double niceTickStep(double raw) {
 }
 
 inline std::string formatTickValue(double v) {
-    // Use fixed for "normal" ranges, scientific for very small/large.
+    // Use fixed for "normal" ranges, scientific for very small/large
     const double av = std::fabs(v);
 
     std::ostringstream oss;
@@ -487,7 +487,7 @@ inline std::string formatTickValue(double v) {
 
     std::string s = oss.str();
 
-    // Trim trailing zeros for fixed format (keep scientific as-is).
+    // Trim trailing zeros for fixed format (keep scientific as-is)
     if (s.find('e') == std::string::npos) {
         const auto dot = s.find('.');
         if (dot != std::string::npos) {
@@ -509,7 +509,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
     const int HEATMAP_H = hm.height;
 
     // Plot area is 1024x1024, plus margins for coordinate axes (µm/"um"),
-    // plus a right-side legend.
+    // plus a right-side legend
     const int MAP_W = 1024;
     const int MAP_H = 1024;
 
@@ -524,7 +524,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
     const int CB_PAD_L = 24;
     const int CB_W     = 24;
     const int CB_PAD_R = 12;
-    // Keep some room for numbers.
+    // Keep some room for numbers
     const int LABEL_W  = 180;
 
     const int OUTPUT_W = MAP_X0 + MAP_W + CB_PAD_L + CB_W + CB_PAD_R + LABEL_W;
@@ -541,7 +541,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
     float vmin = overrideVmin;
     float vmax = overrideVmax;
 
-    // Auto-range if caller didn't provide a valid override range.
+    // Auto-range if caller didn't provide a valid override range
     if (!std::isfinite(vmin) || !std::isfinite(vmax)) {
         vmin = std::numeric_limits<float>::infinity();
         vmax = -std::numeric_limits<float>::infinity();
@@ -558,7 +558,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
         }
     }
 
-    // Avoid degenerate ranges (keeps colormap stable).
+    // Avoid degenerate ranges (keeps colormap stable)
     if (vmax <= vmin) {
         const float eps =
           (std::fabs(vmin) > 0.0f) ? (1e-6f * std::fabs(vmin)) : 1e-6f;
@@ -566,7 +566,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
         vmax += eps;
     }
 
-    // Start with a white canvas so labels are readable.
+    // Start with a white canvas so labels are readable
     std::vector<uint8_t> pixels(static_cast<size_t>(OUTPUT_W) *
                                   static_cast<size_t>(OUTPUT_H) * 3u,
                                 255u);
@@ -579,8 +579,8 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
         throw std::runtime_error("IR-drop heatmap: invalid bbox extents.");
     }
 
-    // Use a UNIFORM pixels/µm scale so tick spacing is equal on X and Y.
-    // This may letterbox (white padding) if bbox aspect ratio != 1.
+    // Use a UNIFORM pixels/µm scale so tick spacing is equal on X and Y
+    // This may letterbox (white padding) if bbox aspect ratio != 1
     const double pxPerUm = std::min(static_cast<double>(MAP_W) / rangeX_um,
                                     static_cast<double>(MAP_H) / rangeY_um);
     if (!(pxPerUm > 0.0) || !std::isfinite(pxPerUm)) {
@@ -592,7 +592,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
     int dataH =
       std::clamp(static_cast<int>(std::lround(rangeY_um * pxPerUm)), 1, MAP_H);
 
-    // Align chip bbox to bottom-left of the plot area (origin at bottom-left).
+    // Align chip bbox to bottom-left of the plot area (origin at bottom-left)
     const int dataX0 = MAP_X0;
     const int dataY0 = MAP_Y0 + (MAP_H - dataH);
 
@@ -735,7 +735,7 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
                     BLACK);
     }
 
-    // 2) Draw colorbar on the right.
+    // 2) Draw colorbar on the right
     const int CB_TOP    = 32;
     const int CB_BOTTOM = 32;
 
@@ -756,12 +756,12 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
 
     drawRect(pixels, OUTPUT_W, OUTPUT_H, cbX0, cbY0, CB_W, cbH, BLACK);
 
-    // 3) Tick marks + numeric labels (with unit).
+    // 3) Tick marks + numeric labels (with unit)
     const int NUM_TICKS = 6;
     // const int TICK_LEN   = 8;
     // const int TEXT_SCALE = 2;
 
-    // Legend unit: show once at the top ("mV"), not on every tick.
+    // Legend unit: show once at the top ("mV"), not on every tick
     {
         const std::string unit = "mV";
         const int unitY = std::max(0, cbY0 - textHeight5x7(TEXT_SCALE) - 12);

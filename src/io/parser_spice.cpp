@@ -125,7 +125,7 @@ ParsedNode parseNodeName(const std::string& raw, int32_t coordToMicroScale) {
                     out.x        = x * coordToMicroScale;
                     out.y        = y * coordToMicroScale;
                 } catch (...) {
-                    // If parsing fails, leave netIndex/x/y as defaults.
+                    // If parsing fails, leave netIndex/x/y as defaults
                 }
             }
         }
@@ -144,7 +144,7 @@ ParsedNode parseNodeName(const std::string& raw, int32_t coordToMicroScale) {
                 out.x        = x * coordToMicroScale;
                 out.y        = y * coordToMicroScale;
             } catch (...) {
-                // If parsing fails, leave netIndex/x/y as defaults.
+                // If parsing fails, leave netIndex/x/y as defaults
             }
         }
     }
@@ -233,9 +233,9 @@ void parseCommentMeta(
         meta.fromNet = IdString(std::to_string(netIndex)); // store index here
         meta.toNet   = IdString("");                       // unused for layer
         meta.raw     = content;
-        bool  isPwr = (netNameStr == "VDD"); // Hard coded for IBMPG benchmark
-        bool  isGnd = (netNameStr == "GND"); // Hard coded for IBMPG benchmark
-        NetId netId = circ.registerNet(
+        bool  isPwr  = (netNameStr == "VDD"); // Hard coded for IBMPG benchmark
+        bool  isGnd  = (netNameStr == "GND"); // Hard coded for IBMPG benchmark
+        NetId netId  = circ.registerNet(
           IdString(layerNameStr), IdString(netNameStr), isPwr, isGnd);
         PDN_FATAL_IF(netId.get() != netIndex,
                      "layer-net should be registered in an ascending order");
@@ -284,7 +284,7 @@ void parseCommentMeta(
         return;
     }
 
-    // Other comments do not affect parser state.
+    // Other comments do not affect parser state
 }
 
 // -------------------------
@@ -314,7 +314,7 @@ void parseResistor(const std::vector<std::string>& tokens, CircuitGraph& circ,
     char firstChar =
       static_cast<char>(std::toupper(static_cast<unsigned char>(name[0])));
     if (firstChar != 'R') {
-        // Should not happen if caller checks the first token.
+        // Should not happen if caller checks the first token
         return;
     }
 
@@ -398,7 +398,7 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
 
     if (!seenGlobalVsrc && connectsToGnd && std::fabs(V) > 0.0) {
         // First non-zero Vsrc tied to ground => treat as global VDD
-        src.type      = Vsrc::GLOBAL;
+        src.type       = Vsrc::GLOBAL;
         seenGlobalVsrc = true;
     } else if (touchesPackage) {
         // Tie between package node(s) and something else
@@ -480,10 +480,10 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
             continue;
         }
 
-        // Line continuation (starting with '+') is not handled here.
+        // Line continuation (starting with '+') is not handled here
         if (stripped[0] == '+') {
             // If your netlists use continuations, you can implement merging
-            // here.
+            // here
             throw std::runtime_error("Line continuation ('+') not supported "
                                      "in SPICE parser at line " +
                                      std::to_string(lineNumber));
@@ -523,7 +523,7 @@ CircuitGraph parseSpice(std::istream& in, CircuitGraph::Unit coordUnit) {
     }
 
     // At this point circ contains nodes, metal/via/pkg resistors,
-    // Vsrcs (including vias as Vsrc::VIA where appropriate), and Isrcs.
+    // Vsrcs (including vias as Vsrc::VIA where appropriate), and Isrcs
     return circ;
 }
 

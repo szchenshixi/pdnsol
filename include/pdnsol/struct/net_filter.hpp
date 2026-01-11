@@ -49,7 +49,7 @@ struct NetFilter {
                includeGround;
     }
 
-    // Name-only filtering (no type info needed).
+    // Name-only filtering (no type info needed)
     bool allowsName(const IdString& netName) const {
         if (!exclude.empty() && detail::listContainsId(exclude, netName)) {
             return false;
@@ -60,13 +60,13 @@ struct NetFilter {
         return true;
     }
 
-    // True only when user explicitly listed this net in `include`.
+    // True only when user explicitly listed this net in `include`
     bool explicitlyIncludesName(const IdString& netName) const {
         if (include.empty()) return false;
         return detail::listContainsId(include, netName);
     }
 
-    // Full filtering with type info.
+    // Full filtering with type info
     bool allows(const IdString& netName, bool isPower, bool isGround) const {
         if (isPower && !includePower) return false;
         if (isGround && !includeGround) return false;

@@ -13,16 +13,16 @@ namespace pdnsol {
 #ifndef NDEBUG
 void assertFail(const char* expr, const char* file, int line,
                 const char* function) {
-    // Default assertion message, similar to <cassert>.
+    // Default assertion message, similar to <cassert>
     Logger::instance().fatal(
       file, line, function, "Assertion failed: (%s)", expr);
-    // Fallback in case Logger::fatal is ever changed to not terminate.
+    // Fallback in case Logger::fatal is ever changed to not terminate
     std::abort();
 }
 
 void assertFail(const char* expr, const char* file, int line,
                 const char* function, const char* fmt, ...) {
-    // Format the user-supplied message.
+    // Format the user-supplied message
     va_list args;
     va_start(args, fmt);
 
@@ -39,7 +39,7 @@ void assertFail(const char* expr, const char* file, int line,
     }
     va_end(args);
 
-    // Prepend the failed expression to the formatted message.
+    // Prepend the failed expression to the formatted message
     std::string fullMessage = "Assertion failed: (";
     fullMessage             = expr;
     if (!userMessage.empty()) {
@@ -50,7 +50,7 @@ void assertFail(const char* expr, const char* file, int line,
     }
 
     Logger::instance().fatal(file, line, function, "%s", fullMessage.c_str());
-    // Fallback in case Logger::fatal is ever changed to not terminate.
+    // Fallback in case Logger::fatal is ever changed to not terminate
     std::abort();
 }
 #endif // NDEBUG

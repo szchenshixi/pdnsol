@@ -50,7 +50,9 @@ uint32_t g_scale = kScaleUninitialized;
  * @return true if scale was updated, false if it was already initialized.
  */
 bool setScaleIfUninitialized(uint32_t scale) {
-    if (g_scale != kScaleUninitialized) { return false; }
+    if (g_scale != kScaleUninitialized) {
+        return false;
+    }
     g_scale = scale;
     return true;
 }
@@ -66,8 +68,8 @@ bool setScaleIfUninitialized(uint32_t scale) {
  */
 uint32_t getScale() {
     if (g_scale == kScaleUninitialized) {
-        // Lazy initialization path. In a single-threaded program this is safe.
-        // In multi-threaded code, this would need synchronization.
+        // Lazy initialization path. In a single-threaded program this is safe
+        // In multi-threaded code, this would need synchronization
         if (setScaleIfUninitialized(kDefaultScale)) {
             PDN_INFO(
               "Fixed-Point number lazily initialized with scaling factor %u",
@@ -97,15 +99,15 @@ void initFixedPointNumberScale(uint32_t scale) {
         return;
     }
 
-    // Scale is already initialized at this point.
+    // Scale is already initialized at this point
     if (g_scale == scale) {
-        // Idempotent re-initialization: allow silently or with a debug log.
+        // Idempotent re-initialization: allow silently or with a debug log
         PDN_INFO(
           "Fixed-Point scale already initialized to %u; repeated call ignored",
           scale);
     } else {
         // Conflicting initialization: log an error and keep the original
-        // value.
+        // value
         PDN_ERROR(
           "Fixed-Point scale already initialized to %u; ignoring new value %u",
           g_scale,
@@ -116,19 +118,19 @@ void initFixedPointNumberScale(uint32_t scale) {
 double fromRep(Rep rep) {
     const uint32_t scale = getScale();
 
-    // Convert integral representation back to double.
+    // Convert integral representation back to double
     // Using double for both numerator and denominator to avoid integer
-    // division.
+    // division
     return static_cast<double>(rep) / static_cast<double>(scale);
 }
 
 Rep toRep(double value) {
     const uint32_t scale = getScale();
 
-    // Compute scaled value in double.
+    // Compute scaled value in double
     const double scaled = value * static_cast<double>(scale);
 
-    // Optional: detect overflow before converting to Rep.
+    // Optional: detect overflow before converting to Rep
     const double maxRepAsDouble =
       static_cast<double>(std::numeric_limits<Rep>::max());
     const double minRepAsDouble =
@@ -144,7 +146,7 @@ Rep toRep(double value) {
           minRepAsDouble,
           maxRepAsDouble);
 
-        // Clamp to representable range to avoid undefined behavior.
+        // Clamp to representable range to avoid undefined behavior
         if (scaled > 0.0) {
             return std::numeric_limits<Rep>::max();
         } else {
@@ -153,7 +155,7 @@ Rep toRep(double value) {
     }
 
     // Round to nearest integer (ties to even) instead of truncating toward
-    // zero. This is usually preferable for fixed-point quantization.
+    // zero. This is usually preferable for fixed-point quantization
     const long long rounded = std::llround(scaled);
     return static_cast<Rep>(rounded);
 }

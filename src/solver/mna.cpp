@@ -21,7 +21,8 @@ Indices buildIndices(const CircuitGraph& circ) {
 
     IdString::Map<IndexType> vsrcIndex;
     vsrcIndex.reserve(circ.mVsrcs.size());
-    for (IndexType k = 0; k < static_cast<IndexType>(circ.mVsrcs.size()); ++k) {
+    for (IndexType k = 0; k < static_cast<IndexType>(circ.mVsrcs.size());
+         ++k) {
         vsrcIndex.emplace(circ.mVsrcs[k].name, k);
     }
 
@@ -32,17 +33,16 @@ MNASystem assembleMNA(CircuitGraph& circ) {
     circ.ensureAllReferencedNodesExist();
     circ.validateReadyForMna();
 
-    Indices indices = buildIndices(circ);
+    Indices   indices  = buildIndices(circ);
     const int numNodes = static_cast<int>(indices.mNodeIndex.size());
     const int numVsrcs = static_cast<int>(indices.mVsrcIndex.size());
-    const int dim = numNodes + numVsrcs;
+    const int dim      = numNodes + numVsrcs;
 
     std::vector<Eigen::Triplet<ScalarType, IndexType>> triplets;
     // Each resistor/vsrc contributes four entries to the conductance matrix
     triplets.reserve(static_cast<std::size_t>(4) *
                        (circ.mMetalResistors.size() +
-                        circ.mViaResistors.size() +
-                        circ.mTsvResistors.size() +
+                        circ.mViaResistors.size() + circ.mTsvResistors.size() +
                         circ.mPkgResistors.size()) +
                      static_cast<std::size_t>(4) * numVsrcs);
 
@@ -55,25 +55,27 @@ MNASystem assembleMNA(CircuitGraph& circ) {
         return it->second;
     };
 
-    auto stampConductance =
-      [&](const IdString& node1, const IdString& node2, ScalarType conductance) {
+    auto stampConductance = [&](const IdString& node1,
+                                const IdString& node2,
+                                ScalarType      conductance) {
         IndexType idx1 = getNodeIndex(node1);
         IndexType idx2 = getNodeIndex(node2);
-          if (idx1 > -1) triplets.emplace_back(idx1, idx1, conductance);
-          if (idx2 > -1) triplets.emplace_back(idx2, idx2, conductance);
-          if (idx1 > -1 && idx2 > -1) {
-              triplets.emplace_back(idx1, idx2, -conductance);
-              triplets.emplace_back(idx2, idx1, -conductance);
-          }
-      };
+        if (idx1 > -1) triplets.emplace_back(idx1, idx1, conductance);
+        if (idx2 > -1) triplets.emplace_back(idx2, idx2, conductance);
+        if (idx1 > -1 && idx2 > -1) {
+            triplets.emplace_back(idx1, idx2, -conductance);
+            triplets.emplace_back(idx2, idx1, -conductance);
+        }
+    };
 
-    auto stampCurrent =
-      [&](const IdString& fromNode, const IdString& toNode, ScalarType current) {
+    auto stampCurrent = [&](const IdString& fromNode,
+                            const IdString& toNode,
+                            ScalarType      current) {
         IndexType fromIdx = getNodeIndex(fromNode);
-        IndexType toIdx = getNodeIndex(toNode);
-          if (fromIdx > -1) bVector(fromIdx) -= current;
-          if (toIdx > -1) bVector(toIdx) += current;
-      };
+        IndexType toIdx   = getNodeIndex(toNode);
+        if (fromIdx > -1) bVector(fromIdx) -= current;
+        if (toIdx > -1) bVector(toIdx) += current;
+    };
 
     auto stampVoltageSource = [&](const Vsrc& voltageSource) {
         auto it = indices.mVsrcIndex.find(voltageSource.name);
@@ -82,10 +84,10 @@ MNASystem assembleMNA(CircuitGraph& circ) {
                                      voltageSource.name.str());
         }
         const IndexType vsrcIdx = it->second;
-        const IndexType row = numNodes + vsrcIdx;
+        const IndexType row     = numNodes + vsrcIdx;
 
         IndexType fromIdx = getNodeIndex(voltageSource.fromNode);
-        IndexType toIdx = getNodeIndex(voltageSource.toNode);
+        IndexType toIdx   = getNodeIndex(voltageSource.toNode);
 
         if (fromIdx > -1) {
             triplets.emplace_back(fromIdx, row, +1.0);
@@ -125,13 +127,14 @@ MNASystem assembleMNA(CircuitGraph& circ) {
         stampVoltageSource(voltageSource);
     }
 
-    Eigen::SparseMatrix<ScalarType, Eigen::ColMajor, IndexType> aMatrix(dim, dim);
+    Eigen::SparseMatrix<ScalarType, Eigen::ColMajor, IndexType> aMatrix(dim,
+                                                                        dim);
     aMatrix.setFromTriplets(triplets.begin(), triplets.end());
     aMatrix.makeCompressed();
 
     MNASystem system;
-    system.mA = std::move(aMatrix);
-    system.mB = std::move(bVector);
+    system.mA         = std::move(aMatrix);
+    system.mB         = std::move(bVector);
     system.mNodeIndex = std::move(indices.mNodeIndex);
     system.mVsrcIndex = std::move(indices.mVsrcIndex);
     return system;
