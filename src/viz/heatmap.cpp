@@ -348,6 +348,12 @@ inline const uint8_t* glyph5x7(char ch) {
     static constexpr uint8_t TLOW[7] = {
       0x04, 0x04, 0x1F, 0x04, 0x04, 0x06, 0x00}; // 't'
 
+    // Letters needed for "um" and "mV"
+    static constexpr uint8_t ULOW[7] = {
+      0x00, 0x00, 0x11, 0x11, 0x11, 0x11, 0x0E}; // 'u'
+    static constexpr uint8_t MLOW[7] = {
+      0x00, 0x00, 0x1B, 0x15, 0x15, 0x11, 0x11}; // 'm'
+
     static constexpr uint8_t D0[7] = {
       0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E};
     static constexpr uint8_t D1[7] = {
@@ -388,6 +394,8 @@ inline const uint8_t* glyph5x7(char ch) {
     case 'o': return OLOW;
     case 'l': return LLOW;
     case 't': return TLOW;
+    case 'u': return ULOW;
+    case 'm': return MLOW;
     case ' ': return SPACE;
     default: return QMARK;
     }
@@ -430,6 +438,40 @@ inline void drawText5x7(std::vector<uint8_t>& img, int W, int H, int x0,
     }
 }
 
+inline int textWidth5x7(const std::string& s, int scale) {
+    const int adv   = (5 + 1) * scale;
+    int       w     = 0;
+    int       lineW = 0;
+    for (char ch : s) {
+        if (ch == '\n') {
+            w     = std::max(w, lineW);
+            lineW = 0;
+        } else {
+            lineW += adv;
+        }
+    }
+    w = std::max(w, lineW);
+    return w;
+}
+
+inline int textHeight5x7(int scale) { return 7 * scale; }
+
+// Choose a "nice" tick step: 1/2/5 * 10^n
+inline double niceTickStep(double raw) {
+    if (!(raw > 0.0) || !std::isfinite(raw)) return 1.0;
+    const double exp10 = std::floor(std::log10(raw));
+    const double base  = std::pow(10.0, exp10);
+    const double f     = raw / base;
+
+    double nf = 1.0;
+    if (f < 1.5) nf = 1.0;
+    else if (f < 3.5) nf = 2.0;
+    else if (f < 7.5) nf = 5.0;
+    else nf = 10.0;
+
+    return nf * base;
+}
+
 inline std::string formatTickValue(double v) {
     // Use fixed for "normal" ranges, scientific for very small/large.
     const double av = std::fabs(v);
@@ -466,18 +508,27 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
     const int HEATMAP_W = hm.width;
     const int HEATMAP_H = hm.height;
 
-    // Keep the heatmap itself 1024x1024, then add a right-side legend.
+    // Plot area is 1024x1024, plus margins for coordinate axes (µm/"um"),
+    // plus a right-side legend.
     const int MAP_W = 1024;
     const int MAP_H = 1024;
+
+    // Axis margins (room for tick labels)
+    const int AXIS_PAD_L = 140;
+    const int AXIS_PAD_B = 90;
+    const int AXIS_PAD_T = 36;
+
+    const int MAP_X0 = AXIS_PAD_L;
+    const int MAP_Y0 = AXIS_PAD_T;
 
     const int CB_PAD_L = 24;
     const int CB_W     = 24;
     const int CB_PAD_R = 12;
-    // Wider label area to accommodate " Volt"
-    const int LABEL_W  = 220;
+    // Keep some room for numbers.
+    const int LABEL_W  = 180;
 
-    const int OUTPUT_W = MAP_W + CB_PAD_L + CB_W + CB_PAD_R + LABEL_W;
-    const int OUTPUT_H = MAP_H;
+    const int OUTPUT_W = MAP_X0 + MAP_W + CB_PAD_L + CB_W + CB_PAD_R + LABEL_W;
+    const int OUTPUT_H = MAP_Y0 + MAP_H + AXIS_PAD_B;
 
     if (HEATMAP_W <= 0 || HEATMAP_H <= 0) {
         throw std::runtime_error(
@@ -520,16 +571,47 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
                                   static_cast<size_t>(OUTPUT_H) * 3u,
                                 255u);
 
-    // 1) Render heatmap into the left MAP_W x MAP_H region.
-    for (int y = 0; y < MAP_H; ++y) {
-        for (int x = 0; x < MAP_W; ++x) {
-            float heatmap_x = (static_cast<float>(x) / MAP_W) * HEATMAP_W;
-            float heatmap_y = (static_cast<float>(y) / MAP_H) * HEATMAP_H;
+    // ---- Layout extents (meters -> micrometers) for axis labeling
+    const double rangeX_um = hm.maxX - hm.minX;
+    const double rangeY_um = hm.maxY - hm.minY;
+    if (!(rangeX_um > 0.0) || !(rangeY_um > 0.0) ||
+        !std::isfinite(rangeX_um) || !std::isfinite(rangeY_um)) {
+        throw std::runtime_error("IR-drop heatmap: invalid bbox extents.");
+    }
 
-            int heatmap_xi =
-              std::clamp(static_cast<int>(heatmap_x), 0, HEATMAP_W - 1);
-            int heatmap_yi =
-              std::clamp(static_cast<int>(heatmap_y), 0, HEATMAP_H - 1);
+    // Use a UNIFORM pixels/µm scale so tick spacing is equal on X and Y.
+    // This may letterbox (white padding) if bbox aspect ratio != 1.
+    const double pxPerUm = std::min(static_cast<double>(MAP_W) / rangeX_um,
+                                    static_cast<double>(MAP_H) / rangeY_um);
+    if (!(pxPerUm > 0.0) || !std::isfinite(pxPerUm)) {
+        throw std::runtime_error("IR-drop heatmap: invalid px/um scale.");
+    }
+
+    int dataW =
+      std::clamp(static_cast<int>(std::lround(rangeX_um * pxPerUm)), 1, MAP_W);
+    int dataH =
+      std::clamp(static_cast<int>(std::lround(rangeY_um * pxPerUm)), 1, MAP_H);
+
+    // Align chip bbox to bottom-left of the plot area (origin at bottom-left).
+    const int dataX0 = MAP_X0;
+    const int dataY0 = MAP_Y0 + (MAP_H - dataH);
+
+    // 1) Render heatmap into dataW x dataH region, with bottom-left origin:
+    //    - x increases to the right
+    //    - y increases upward
+    for (int y = 0; y < dataH; ++y) {
+        for (int x = 0; x < dataW; ++x) {
+            const double xUm = static_cast<double>(x) / pxPerUm;
+            const double yUm =
+              static_cast<double>(dataH - 1 - y) / pxPerUm; // flip Y
+
+            const double nx = xUm / rangeX_um;
+            const double ny = yUm / rangeY_um;
+
+            const int heatmap_xi =
+              std::clamp(static_cast<int>(nx * HEATMAP_W), 0, HEATMAP_W - 1);
+            const int heatmap_yi =
+              std::clamp(static_cast<int>(ny * HEATMAP_H), 0, HEATMAP_H - 1);
 
             const size_t heatmap_idx = static_cast<size_t>(heatmap_yi) *
                                          static_cast<size_t>(HEATMAP_W) +
@@ -537,23 +619,129 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
 
             const RGB color = applyColormap(scalar[heatmap_idx], vmin, vmax);
 
+            const int    outX = dataX0 + x;
+            const int    outY = dataY0 + y;
             const size_t out_idx =
-              (static_cast<size_t>(y) * static_cast<size_t>(OUTPUT_W) +
-               static_cast<size_t>(x)) *
+              (static_cast<size_t>(outY) * static_cast<size_t>(OUTPUT_W) +
+               static_cast<size_t>(outX)) *
               3u;
+
             pixels[out_idx + 0] = color.r;
             pixels[out_idx + 1] = color.g;
             pixels[out_idx + 2] = color.b;
         }
     }
 
+    const RGB BLACK{0, 0, 0};
+
+    // Draw chip boundary rectangle
+    drawRect(pixels, OUTPUT_W, OUTPUT_H, dataX0, dataY0, dataW, dataH, BLACK);
+
+    // 1b) Draw X/Y axes ticks in micrometers (origin at bottom-left)
+    const int TEXT_SCALE = 2;
+    const int TICK_LEN   = 8;
+    const int txtH       = textHeight5x7(TEXT_SCALE);
+
+    // Same tick step on both axes (in µm)
+    const double rangeMax_um      = std::max(rangeX_um, rangeY_um);
+    const int    TARGET_INTERVALS = 5; // "a few" ticks
+    const double tickStep_um = niceTickStep(rangeMax_um / TARGET_INTERVALS);
+
+    const int xAxisY = dataY0 + dataH - 1; // bottom edge
+    const int yAxisX = dataX0;             // left edge
+
+    // X-axis ticks
+    for (double vUm = 0.0; vUm <= rangeX_um + 1e-12; vUm += tickStep_um) {
+        const int xTick =
+          std::clamp(dataX0 + static_cast<int>(std::lround(vUm * pxPerUm)),
+                     dataX0,
+                     dataX0 + dataW - 1);
+
+        // Tick goes downward into bottom margin
+        fillRect(
+          pixels, OUTPUT_W, OUTPUT_H, xTick, xAxisY, 1, TICK_LEN, BLACK);
+
+        const std::string label  = formatTickValue(vUm);
+        const int         labelW = textWidth5x7(label, TEXT_SCALE);
+        int               xText  = xTick - labelW / 2;
+        int               yText  = xAxisY + TICK_LEN + 2;
+        xText                    = std::clamp(xText, 0, OUTPUT_W - labelW);
+        yText                    = std::clamp(yText, 0, OUTPUT_H - txtH);
+        drawText5x7(
+          pixels, OUTPUT_W, OUTPUT_H, xText, yText, label, TEXT_SCALE, BLACK);
+    }
+
+    // Y-axis ticks
+    for (double vUm = 0.0; vUm <= rangeY_um + 1e-12; vUm += tickStep_um) {
+        const int yTick =
+          std::clamp(xAxisY - static_cast<int>(std::lround(vUm * pxPerUm)),
+                     dataY0,
+                     xAxisY);
+
+        // Tick goes left into left margin
+        fillRect(pixels,
+                 OUTPUT_W,
+                 OUTPUT_H,
+                 yAxisX - TICK_LEN,
+                 yTick,
+                 TICK_LEN,
+                 1,
+                 BLACK);
+
+        const std::string label  = formatTickValue(vUm);
+        const int         labelW = textWidth5x7(label, TEXT_SCALE);
+        int               xText  = yAxisX - TICK_LEN - 4 - labelW;
+        int               yText  = yTick - txtH / 2;
+        xText                    = std::clamp(xText, 0, OUTPUT_W - labelW);
+        yText                    = std::clamp(yText, 0, OUTPUT_H - txtH);
+        drawText5x7(
+          pixels, OUTPUT_W, OUTPUT_H, xText, yText, label, TEXT_SCALE, BLACK);
+    }
+
+    // Axis units (only once, at the end of each axis)
+    const std::string AXIS_UNIT = "um";
+    const int         unitW     = textWidth5x7(AXIS_UNIT, TEXT_SCALE);
+
+    // X-axis unit at far right end (below tick labels)
+    {
+        const int yTickLabels = xAxisY + TICK_LEN + 2;
+        int       xUnitX      = dataX0 + dataW - unitW;
+        int       xUnitY      = yTickLabels + txtH + 2;
+        xUnitX                = std::clamp(xUnitX, 0, OUTPUT_W - unitW);
+        xUnitY                = std::clamp(xUnitY, 0, OUTPUT_H - txtH);
+        drawText5x7(pixels,
+                    OUTPUT_W,
+                    OUTPUT_H,
+                    xUnitX,
+                    xUnitY,
+                    AXIS_UNIT,
+                    TEXT_SCALE,
+                    BLACK);
+    }
+
+    // Y-axis unit at top end
+    {
+        int yUnitX = yAxisX - TICK_LEN - 4 - unitW;
+        int yUnitY = dataY0 - txtH - 2;
+        yUnitX     = std::clamp(yUnitX, 0, OUTPUT_W - unitW);
+        yUnitY     = std::clamp(yUnitY, 0, OUTPUT_H - txtH);
+        drawText5x7(pixels,
+                    OUTPUT_W,
+                    OUTPUT_H,
+                    yUnitX,
+                    yUnitY,
+                    AXIS_UNIT,
+                    TEXT_SCALE,
+                    BLACK);
+    }
+
     // 2) Draw colorbar on the right.
     const int CB_TOP    = 32;
     const int CB_BOTTOM = 32;
 
-    const int cbX0 = MAP_W + CB_PAD_L;
-    const int cbY0 = CB_TOP;
-    const int cbH  = OUTPUT_H - CB_TOP - CB_BOTTOM;
+    const int cbX0 = MAP_X0 + MAP_W + CB_PAD_L;
+    const int cbY0 = MAP_Y0 + CB_TOP;
+    const int cbH  = MAP_H - CB_TOP - CB_BOTTOM;
 
     if (cbH > 1) {
         for (int i = 0; i < cbH; ++i) {
@@ -566,13 +754,21 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
         }
     }
 
-    const RGB BLACK{0, 0, 0};
     drawRect(pixels, OUTPUT_W, OUTPUT_H, cbX0, cbY0, CB_W, cbH, BLACK);
 
     // 3) Tick marks + numeric labels (with unit).
-    const int NUM_TICKS  = 6;
-    const int TICK_LEN   = 8;
-    const int TEXT_SCALE = 2;
+    const int NUM_TICKS = 6;
+    // const int TICK_LEN   = 8;
+    // const int TEXT_SCALE = 2;
+
+    // Legend unit: show once at the top ("mV"), not on every tick.
+    {
+        const std::string unit = "mV";
+        const int unitY = std::max(0, cbY0 - textHeight5x7(TEXT_SCALE) - 12);
+        const int unitX = cbX0 + CB_W + 4;
+        drawText5x7(
+          pixels, OUTPUT_W, OUTPUT_H, unitX, unitY, unit, TEXT_SCALE, BLACK);
+    }
 
     for (int t = 0; t < NUM_TICKS; ++t) {
         const float ft =
@@ -594,9 +790,10 @@ static void writeHeatmapToPngImpl(const IRDropHeatmap& hm,
         fillRect(pixels, OUTPUT_W, OUTPUT_H, x0, yTick, (x1 - x0), 1, BLACK);
 
         // Label + unit
-        const std::string label = formatTickValue(vTick) + " Volt";
-        int               xText = x1 + 4;
-        int               yText = yTick - (7 * TEXT_SCALE) / 2;
+        const double      vTick_mV = vTick * 1e3;
+        const std::string label    = formatTickValue(vTick_mV);
+        int               xText    = x1 + 4;
+        int               yText    = yTick - (7 * TEXT_SCALE) / 2;
         yText = std::clamp(yText, 0, OUTPUT_H - 7 * TEXT_SCALE);
 
         drawText5x7(

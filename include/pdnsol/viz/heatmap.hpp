@@ -115,10 +115,10 @@ struct IRDropHeatmap {
     int width  = 0;
     int height = 0;
 
-    double minX = 0.0;
-    double minY = 0.0;
-    double maxX = 0.0;
-    double maxY = 0.0;
+    double minX = 0.0; // um, micrometer
+    double minY = 0.0; // um, micrometer
+    double maxX = 0.0; // um, micrometer
+    double maxY = 0.0; // um, micrometer
 
     // Row-major storage: cells[y * width + x]
     std::vector<IRDropCell> cells;

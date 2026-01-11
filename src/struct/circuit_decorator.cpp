@@ -421,15 +421,15 @@ CircuitDecorator::parseCurrentRegionsFromJson(
               "Each current_region must have 'area' of size 4.");
         }
 
-        double xMinUm   = regionJ["area"][0].get<double>();
-        double yMinUm   = regionJ["area"][1].get<double>();
-        double widthUm  = regionJ["area"][2].get<double>();
-        double heightUm = regionJ["area"][3].get<double>();
+        double xMinUm = regionJ["area"][0].get<double>();
+        double yMinUm = regionJ["area"][1].get<double>();
+        double xMaxUm = regionJ["area"][2].get<double>();
+        double yMaxUm = regionJ["area"][3].get<double>();
 
         r.rect.xMin = FPN::toRep(xMinUm);
         r.rect.yMin = FPN::toRep(yMinUm);
-        r.rect.xMax = r.rect.xMin + FPN::toRep(widthUm);
-        r.rect.yMax = r.rect.yMin + FPN::toRep(heightUm);
+        r.rect.xMax = FPN::toRep(xMaxUm);
+        r.rect.yMax = FPN::toRep(yMaxUm);
 
         // ---- layer ----
         if (!regionJ.contains("layer") || !regionJ["layer"].is_string()) {
