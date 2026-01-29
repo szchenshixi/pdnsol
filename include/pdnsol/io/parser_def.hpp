@@ -7,27 +7,13 @@
 #include <vector>
 
 #include "pdnsol/common.hpp"
-#include "pdnsol/io/tech_db.hpp"
+#include "pdnsol/io/parser_config.hpp"
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/struct/net_filter.hpp"
 #include "pdnsol/utils/id_string.hpp"
 #include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
-
-// -----------------------------------------------------------------------------
-// Small helper functions for DEF parsing (declared here, implemented in .cpp)
-// -----------------------------------------------------------------------------
-
-// Strip optional DEF double quotes from a name token, e.g. "VDD" -> VDD.
-// std::string stripDefQuotes(const std::string& s);
-
-// Robust integer parser for DEF coordinate tokens.
-// bool parseIntSafe(const std::string& s, int& out);
-
-// Simple tokenizer for DEF lines.
-// Splits on whitespace and also makes '(', ')', ';', '+' separate tokens.
-// std::vector<std::string> tokenizeDef(const std::string& s);
 
 // -----------------------------------------------------------------------------
 // Optional routing context helper (currently unused but kept as utility type)
@@ -193,11 +179,8 @@ struct StripeDerived {
 
 class CoarsePdnBuilder3D {
   public:
-    CoarsePdnBuilder3D(TechDatabase& techDb, LayerGridResolution defaultRes,
-                       const IdString::Map<LayerGridResolution>& perLayerRes,
-                       const std::vector<std::string>&           powerNetNames,
-                       const std::vector<std::string>& groundNetNames,
-                       const std::vector<std::string>& layerOrder);
+    CoarsePdnBuilder3D(const DieConfig&                 dieConfig,
+                       const IdString::Map<GridConfig>& gridConfigs);
 
     // Encode (netIndex, layerIndex) into Node.mNet and MetalRes.mNet
     int encodeNetLayer(int netIndex, int layerIndex) const;
@@ -261,7 +244,7 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // DEF parsing: PDN stripes, vias, and bumps
     // -----------------------------------------------------------------
-    enum class Section { NONE, SPECIALNETS, VIAS, COMPONENTS };
+    enum class Section { NONE, SPECIALNETS, COMPONENTS };
 
     bool parseDefPdnAndBumps(const std::string& defPath);
 
@@ -270,8 +253,7 @@ class CoarsePdnBuilder3D {
                                bool&              currentNetIsPdn,
                                std::string&       currentLayerName,
                                int&               currentRouteWidthDbu);
-    // void handlePinsLine(const std::string& line);
-    void handleViasLine(const std::string& line);
+    // void handleViasLine(const std::string& line);
     void handleComponentsLine(const std::string& line,
                               std::string&       currentInstName,
                               std::string& currentMacroName, int& currentX,
@@ -284,28 +266,20 @@ class CoarsePdnBuilder3D {
     void recordStripeRectangle(const std::string& netName,
                                const std::string& layerName, int x0Dbu,
                                int y0Dbu, int x1Dbu, int y1Dbu);
-    // void addStripeRectangle(const std::string& netName,
-    //                         const std::string& layerName, int x0Dbu, int
-    //                         y0Dbu, int x1Dbu, int y1Dbu);
 
-    void accumulateHorizontalStripe(ConductanceGrid2D& grid,
-                                    const TechLayer& layer, double x0,
+    void accumulateHorizontalStripe(ConductanceGrid2D&      grid,
+                                    const MetalLayerConfig& layer, double x0,
                                     double y0, double x1, double y1);
 
-    void accumulateVerticalStripe(ConductanceGrid2D& grid,
-                                  const TechLayer& layer, double x0, double y0,
-                                  double x1, double y1);
+    void accumulateVerticalStripe(ConductanceGrid2D&      grid,
+                                  const MetalLayerConfig& layer, double x0,
+                                  double y0, double x1, double y1);
 
     // -----------------------------------------------------------------
     // Via accumulation
     // -----------------------------------------------------------------
     void recordViaInstance(const std::string& netName,
                            const std::string& viaName, int xDbu, int yDbu);
-    // void addViaInstance(const std::string& netName, const std::string&
-    // viaName,
-    //                     int xDbu, int yDbu);
-    // void addTsvInstance(const std::string& instName,
-    //                     const std::string& macroName, int xDbu, int yDbu);
     void recordTsvInstance(const std::string& instName,
                            const std::string& macroName, int xDbu, int yDbu);
 
@@ -321,7 +295,6 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
 
     void finalizeRecordedPdnGeometry();
-    // void buildCircuitGraph(CircuitGraph& graph);
     // Build graph for a subset of nets (by netIndex)
     void buildCircuitGraph(CircuitGraph&           graph,
                            const std::vector<int>& netIndices);
@@ -349,12 +322,12 @@ class CoarsePdnBuilder3D {
     // -----------------------------------------------------------------
     // Net registration helper
     // -----------------------------------------------------------------
-    void addNetIfAbsent(const std::string& name, bool isPower, bool isGround);
+    void addNetIfAbsent(IdString name, bool isPower, bool isGround);
 
   private:
     // Inputs
-    TechDatabase&       mTechDb;
-    LayerGridResolution mDefaultRes;
+    const DieConfig&                 mDieConfig;
+    const IdString::Map<GridConfig>& mGridConfigs;
 
     // PDN nets
     IdString::Map<NetInfo> mNetByName;
@@ -367,9 +340,6 @@ class CoarsePdnBuilder3D {
     // (layer index -> grid resolution)
     std::vector<LayerGridResolution> mLayerGridRes;
     int                              mNumLayers = 0;
-
-    // num_nets * num_layers
-    int mNumNetLayerComb = 0;
 
     // Per-build selection mask (size=mNumNets). If empty => treat as "all"
     std::vector<std::uint8_t> mNetSelectedMask;
@@ -392,6 +362,11 @@ class CoarsePdnBuilder3D {
     std::vector<StripeRec> mRecordedStripes;
     std::vector<ViaRec>    mRecordedVias;
     std::vector<TsvRec>    mRecordedTsvs;
+
+    // For error messages
+    IdString::Set mMissingNets;
+    IdString::Set mMissingVias;
+    IdString::Set mMissingTsvs;
 };
 
 // Inline accessors for small structs

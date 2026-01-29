@@ -6,13 +6,6 @@
 #include "pdnsol/utils/logging.hpp"
 
 namespace pdnsol {
-// Decode netId into (layerIndex, isVdd).
-// static NetDecomposition decodeNetId(int32_t netId) {
-//     NetDecomposition d;
-//     d.layer = netId / 2 + 1;
-//     d.isVdd = ((netId % 2) == 1);
-//     return d;
-// }
 // Helper: format unique current source name
 static std::string formatIsrcName(IdString layer, IdString netName,
                                   std::size_t regionIdx,
@@ -23,16 +16,16 @@ static std::string formatIsrcName(IdString layer, IdString netName,
     return oss.str();
 }
 
-CircuitDecorator::CircuitDecorator(CircuitGraph&          inGraph,
-                                   const DecoratorConfig& cfg,
-                                   const NetFilter&       netFilter)
+CircuitDecorator::CircuitDecorator(CircuitGraph&    inGraph,
+                                   const DieConfig& dieConfig,
+                                   const NetFilter& netFilter)
     : mIn(inGraph)
-    , mCfg(cfg)
+    , mDieConfig(dieConfig)
     , mNetFilter(netFilter) {}
 
 void CircuitDecorator::build() {
-    addCurrentRegionsFromJson(mCfg.currentConfigPath, mIn);
-    addVoltageSourceFromConfig(mCfg.voltageConfigPath, mIn);
+    addCurrentRegionsFromJson(mDieConfig.files.currentSrcPath, mIn);
+    addVoltageSourceFromConfig(mDieConfig.files.voltageSrcPath, mIn);
 }
 
 // -------------------------------------------------------------------------
@@ -56,13 +49,11 @@ void CircuitDecorator::addVoltageSourceFromConfig(
   const std::string& configFilePath, CircuitGraph& graph) {
     // Landing layer for all voltage sources (user-specified)
     // Example: "M8", "TOP_METAL", etc
-    const std::string& landingLayerStr = mCfg.voltageSourceLandingLayer;
-    if (landingLayerStr.empty()) {
+    const IdString landingLayerName = mDieConfig.tech.bumpLayer;
+    if (!landingLayerName.valid()) {
         PDN_FATAL("CircuitDecorator::addVoltageSourceFromConfig: "
                   "voltageSourceLandingLayer is empty in DecoratorConfig.");
     }
-    // Convert landingLayer to IdString -- adapt to your IdString API
-    const IdString landingLayerId(landingLayerStr);
 
     // Open configuration file
     std::ifstream ifs(configFilePath);
@@ -99,10 +90,10 @@ void CircuitDecorator::addVoltageSourceFromConfig(
 
     // Helper: iterate over graph.mNodes
     auto findClosestNodeOnLayerAndNet =
-      [&graph, &landingLayerId](const IdString& netNameId,
-                                Tick            xTick,
-                                Tick            yTick,
-                                IdString&       outNodeName) -> bool {
+      [&graph, &landingLayerName](const IdString& netNameId,
+                                  Tick            xTick,
+                                  Tick            yTick,
+                                  IdString&       outNodeName) -> bool {
         bool        found  = false;
         long double bestD2 = 0.0L;
         // outNodeName will be populated on success
@@ -121,7 +112,7 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             NetKey nk = graph.netKey(nid);
 
             // Filter by landing layer
-            if (nk.layer != landingLayerId) continue;
+            if (nk.layer != landingLayerName) continue;
 
             // Filter by net name
             if (nk.netName != netNameId) continue;
@@ -164,23 +155,23 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             continue;
         }
 
-        const IdString netNameId(netNameStr);
+        const IdString netName(netNameStr);
 
         // Name-only filter first (cheap, avoids noise)
-        if (!mNetFilter.allowsName(netNameId)) {
+        if (!mNetFilter.allowsName(netName)) {
             continue;
         }
 
         // If the graph doesn't even contain this net on the landing layer,
         // and the user is filtering, skip quietly unless explicitly requested
-        const NetId landingNetId = graph.netId(landingLayerId, netNameId);
+        const NetId landingNetId = graph.netId(landingLayerName, netName);
         if (!landingNetId) {
             if (mNetFilter.isAllowAll() ||
-                mNetFilter.explicitlyIncludesName(netNameId)) {
+                mNetFilter.explicitlyIncludesName(netName)) {
                 PDN_WARN("[addVoltageSourceFromConfig] Net '%s' not found on "
                          "landing layer '%s'. Skip this source.",
-                         netNameStr.c_str(),
-                         landingLayerStr.c_str());
+                         netName.c_str(),
+                         landingLayerName.c_str());
             }
             continue;
         }
@@ -190,13 +181,18 @@ void CircuitDecorator::addVoltageSourceFromConfig(
             continue;
         }
 
-        auto vsrcProp = mCfg.voltageSources.find(netNameStr);
-        if (vsrcProp == mCfg.voltageSources.end()) {
-            PDN_WARN("Unknown voltage net %s. Skip", netNameStr.c_str());
+        ScalarType voltage  = -1.0;  // Volt
+        ScalarType packageR = -1.0; // Ohm
+        if (auto gndIt = mDieConfig.tech.groundNets.find(netName); gndIt != mDieConfig.tech.groundNets.end()) {
+            voltage = gndIt->second.voltage;
+            packageR = gndIt->second.packageResistance;
+        } else if (auto pwrIt = mDieConfig.tech.powerNets.find(netName); pwrIt != mDieConfig.tech.powerNets.end()) {
+            voltage = pwrIt->second.voltage;
+            packageR = pwrIt->second.packageResistance;
+        } else {
+            PDN_WARN("Unknown voltage net %s. Skip", netName.c_str());
             continue;
         }
-        const ScalarType voltage  = vsrcProp->second.voltage;  // Volt
-        const ScalarType packageR = vsrcProp->second.packageR; // Ohm
 
         // Convert coordinates to internal fixed-point number representation
         const Tick xTick = FPN::toRep(xCoord);
@@ -205,14 +201,14 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         // 1) Find the closest PDN node on the landing layer for this net
         IdString   closestNodeName;
         const bool found = findClosestNodeOnLayerAndNet(
-          netNameId, xTick, yTick, closestNodeName);
+          netName, xTick, yTick, closestNodeName);
 
         if (!found) {
             PDN_WARN(
               "Warning: [addVoltageSourceFromConfig] No node found on "
               "layer '%s' for net '%s' near (%g, %g) in '%s' (line %zu). "
               "This voltage source is ignored.",
-              landingLayerStr.c_str(),
+              landingLayerName.c_str(),
               netNameStr.c_str(),
               xCoord,
               yCoord,
@@ -299,7 +295,7 @@ void CircuitDecorator::addVoltageSourceFromConfig(
         // package-side node feeding R_pkg_eq
         vsrc.fromNode              = info.pkgNode;
         // Ideal reference ground
-        vsrc.toNode                = IdString("GND");
+        vsrc.toNode                = GND;
         vsrc.type                  = Vsrc::PACKAGE;
         vsrc.V                     = voltage;
 
@@ -382,8 +378,8 @@ void CircuitDecorator::addIsrcsForRegionNet(const RectRegion& rect,
 
         Isrc is;
         is.name     = IdString(formatIsrcName(layer, netName, regionIdx, i));
-        is.fromNode = isPower ? n->name : IdString("GND");
-        is.toNode   = isPower ? IdString("GND") : n->name;
+        is.fromNode = isPower ? n->name : GND;
+        is.toNode   = isPower ? GND : n->name;
         is.type     = Isrc::IB;
         is.I        = static_cast<ScalarType>(I);
 

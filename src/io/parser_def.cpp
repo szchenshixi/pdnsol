@@ -12,6 +12,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "pdnsol/io/parser_config.hpp"
 #include "pdnsol/io/parser_utils.hpp" // for trim, startsWithIgnoreCase, clamp
 #include "pdnsol/utils/fixed_point_number.hpp"
 #include "pdnsol/utils/logging.hpp"
@@ -161,42 +162,39 @@ struct TileNodeIdGrid {
 // -----------------------------------------------------------------------------
 
 CoarsePdnBuilder3D::CoarsePdnBuilder3D(
-  TechDatabase& techDb, LayerGridResolution defaultRes,
-  const IdString::Map<LayerGridResolution>& perLayerRes,
-  const std::vector<std::string>&           powerNetNames,
-  const std::vector<std::string>&           groundNetNames,
-  const std::vector<std::string>&           layerOrder)
-    : mTechDb(techDb)
-    , mDefaultRes(defaultRes) {
-
+  const DieConfig& dieConfig, const IdString::Map<GridConfig>& gridConfigs)
+    : mDieConfig(dieConfig)
+    , mGridConfigs(gridConfigs) {
     // 1) Register PDN nets
-    for (const std::string& n : powerNetNames) {
+    for (const auto& [n, _] : mDieConfig.tech.powerNets) {
         addNetIfAbsent(n, /*isPower=*/true, /*isGround=*/false);
     }
-    for (const std::string& n : groundNetNames) {
+    for (const auto& [n, _] : mDieConfig.tech.groundNets) {
         addNetIfAbsent(n, /*isPower=*/false, /*isGround=*/true);
     }
     mNumNets = static_cast<int>(mNetByIndex.size());
 
     // 2) Register PDN layers and build mapping from layer name to index
-    mLayerNameToIndex.reserve(layerOrder.size());
-    mLayerOrder.reserve(layerOrder.size()); // fixed: reserve target size
-    for (std::size_t i = 0; i < layerOrder.size(); ++i) {
-        IdString layerId(layerOrder[i]);
-        mLayerOrder.push_back(layerId);
-        mLayerNameToIndex[layerId] = static_cast<int>(i);
+    mNumLayers = static_cast<int>(mDieConfig.tech.metalLayers.size());
+    mLayerNameToIndex.reserve(mNumLayers);
+    mLayerOrder.reserve(mNumLayers);
+    int i = 0;
+    for (const auto& [layerName, _] : mDieConfig.tech.metalLayers) {
+        mLayerOrder.push_back(layerName);
+        mLayerNameToIndex[layerName] = i++;
     }
-    mNumLayers       = static_cast<int>(mLayerOrder.size());
-    mNumNetLayerComb = mNumNets * mNumLayers;
-    // 3) Resolve per-layer grid resolutions (NEW)
+
+    // 3) Resolve per-layer grid resolutions
     mLayerGridRes.resize(static_cast<std::size_t>(mNumLayers));
     for (int l = 0; l < mNumLayers; ++l) {
         IdString lname = mLayerOrder[l];
-        auto     it    = perLayerRes.find(lname);
-        if (it != perLayerRes.end()) {
-            mLayerGridRes[l] = it->second;
+        auto     it    = mGridConfigs.find(lname);
+        if (it != mGridConfigs.end()) {
+            const GridConfig& c = it->second;
+            mLayerGridRes[l]    = LayerGridResolution{.sx = c.sx, .sy = c.sy};
         } else {
-            mLayerGridRes[l] = mDefaultRes;
+            const GridConfig& c = mGridConfigs.at(DEFAULT);
+            mLayerGridRes[l]    = LayerGridResolution{.sx = c.sx, .sy = c.sy};
         }
 
         if (mLayerGridRes[l].sx <= 0 || mLayerGridRes[l].sy <= 0) {
@@ -204,6 +202,50 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
         }
     }
 }
+
+// CoarsePdnBuilder3D::CoarsePdnBuilder3D(
+//   TechDatabase& techDb, LayerGridResolution defaultRes,
+//   const IdString::Map<LayerGridResolution>& perLayerRes,
+//   const std::vector<std::string>&           powerNetNames,
+//   const std::vector<std::string>&           groundNetNames,
+//   const std::vector<std::string>&           layerOrder)
+//     : mTechDb(techDb)
+//     , mDefaultRes(defaultRes) {
+
+//     // 1) Register PDN nets
+//     for (const std::string& n : powerNetNames) {
+//         addNetIfAbsent(n, /*isPower=*/true, /*isGround=*/false);
+//     }
+//     for (const std::string& n : groundNetNames) {
+//         addNetIfAbsent(n, /*isPower=*/false, /*isGround=*/true);
+//     }
+//     mNumNets = static_cast<int>(mNetByIndex.size());
+
+//     // 2) Register PDN layers and build mapping from layer name to index
+//     mLayerNameToIndex.reserve(layerOrder.size());
+//     mLayerOrder.reserve(layerOrder.size()); // fixed: reserve target size
+//     for (std::size_t i = 0; i < layerOrder.size(); ++i) {
+//         IdString layerId(layerOrder[i]);
+//         mLayerOrder.push_back(layerId);
+//         mLayerNameToIndex[layerId] = static_cast<int>(i);
+//     }
+//     mNumLayers = static_cast<int>(mLayerOrder.size());
+//     // 3) Resolve per-layer grid resolutions (NEW)
+//     mLayerGridRes.resize(static_cast<std::size_t>(mNumLayers));
+//     for (int l = 0; l < mNumLayers; ++l) {
+//         IdString lname = mLayerOrder[l];
+//         auto     it    = perLayerRes.find(lname);
+//         if (it != perLayerRes.end()) {
+//             mLayerGridRes[l] = it->second;
+//         } else {
+//             mLayerGridRes[l] = mDefaultRes;
+//         }
+
+//         if (mLayerGridRes[l].sx <= 0 || mLayerGridRes[l].sy <= 0) {
+//             PDN_FATAL("Invalid grid stride for layer %s", lname.c_str());
+//         }
+//     }
+// }
 
 int CoarsePdnBuilder3D::encodeNetLayer(int netIndex, int layerIndex) const {
     return layerIndex * mNumNets + netIndex;
@@ -544,6 +586,11 @@ void CoarsePdnBuilder3D::resetForNewBuild() {
     mRecordedVias.clear();
     mRecordedTsvs.clear();
     mNetSelectedMask.clear();
+
+    // For error messages
+    mMissingNets.clear();
+    mMissingVias.clear();
+    mMissingTsvs.clear();
 }
 
 void CoarsePdnBuilder3D::setNetSelectedMask(
@@ -559,12 +606,11 @@ void CoarsePdnBuilder3D::setNetSelectedMask(
 std::vector<int>
 CoarsePdnBuilder3D::selectNetIndices(const NetFilter& filter) const {
     // Optional: warn if user requested unknown nets
-    for (const std::string& s : filter.include) {
-        IdString id(stripDefQuotes(s));
-        if (mNetByName.find(id) == mNetByName.end()) {
+    for (IdString netName : filter.includes) {
+        if (mNetByName.find(netName) == mNetByName.end()) {
             PDN_WARN("Net filter requested '%s' but it is not a "
                      "registered PDN net",
-                     id.c_str());
+                     netName.c_str());
         }
     }
 
@@ -635,16 +681,12 @@ void CoarsePdnBuilder3D::recordStripeFromSegment(const std::string& netName,
         // Vertical stripe
         int yMin = std::min(y0, y1);
         int yMax = std::max(y0, y1);
-        // addStripeRectangle(
-        //   netName, layerName, x0 - half, yMin, x0 + half, yMax);
         recordStripeRectangle(
           netName, layerName, x0 - halfLo, yMin, x0 + halfHi, yMax);
     } else if (y0 == y1) {
         // Horizontal stripe
         int xMin = std::min(x0, x1);
         int xMax = std::max(x0, x1);
-        // addStripeRectangle(
-        //   netName, layerName, xMin, y0 - half, xMax, y0 + half);
         recordStripeRectangle(
           netName, layerName, xMin, y0 - halfLo, xMax, y0 + halfHi);
     } else {
@@ -653,7 +695,6 @@ void CoarsePdnBuilder3D::recordStripeFromSegment(const std::string& netName,
         int xMax = std::max(x0, x1);
         int yMin = std::min(y0, y1);
         int yMax = std::max(y0, y1);
-        // addStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
         recordStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
     }
 }
@@ -706,14 +747,14 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
         }
 
         // VIAS section
-        if (startsWithIgnoreCase(tline, "VIAS")) {
-            section = Section::VIAS;
-            continue;
-        }
-        if (startsWithIgnoreCase(tline, "END VIAS")) {
-            section = Section::NONE;
-            continue;
-        }
+        // if (startsWithIgnoreCase(tline, "VIAS")) {
+        //     section = Section::VIAS;
+        //     continue;
+        // }
+        // if (startsWithIgnoreCase(tline, "END VIAS")) {
+        //     section = Section::NONE;
+        //     continue;
+        // }
 
         // For TSVs
         if (startsWithIgnoreCase(tline, "COMPONENTS")) {
@@ -728,10 +769,6 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
             section = Section::NONE;
             if (!currentCompInstName.empty() &&
                 !currentCompMacroName.empty()) {
-                // addTsvInstance(currentCompInstName,
-                //                currentCompMacroName,
-                //                currentCompX,
-                //                currentCompY);
                 recordTsvInstance(currentCompInstName,
                                   currentCompMacroName,
                                   currentCompX,
@@ -749,7 +786,7 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
                                   currentRouteWidthDbu);
             break;
         // case Section::PINS: handlePinsLine(tline); break;
-        case Section::VIAS: handleViasLine(tline); break;
+        // case Section::VIAS: handleViasLine(tline); break;
         case Section::COMPONENTS:
             handleComponentsLine(tline,
                                  currentCompInstName,
@@ -858,7 +895,6 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                     tokens[i] != ";") {
                     // Via instantiation: (x y) viaName
                     const std::string& viaName = tokens[i++];
-                    // addViaInstance(currentNetName, viaName, x0, y0);
                     recordViaInstance(currentNetName, viaName, x0, y0);
                 } else if (i < n && tokens[i] == "(") {
                     // Wire segment: (x0 y0) (x1 y1) ..
@@ -1020,189 +1056,100 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
     }
 }
 
-// void CoarsePdnBuilder3D::handlePinsLine(const std::string& line) {
+// void CoarsePdnBuilder3D::handleViasLine(const std::string& line) {
 //     std::vector<std::string> tokens = tokenizeDef(line);
 //     if (tokens.empty()) return;
 
-//     std::size_t       i = 0;
+//     // We only care about lines that start a via definition:
+//     //   - via4_1600x1600 + VIARULE ... + CUTSIZE ... + LAYERS ..
+//     if (tokens[0] != "-" || tokens.size() < 2) {
+//         return;
+//     }
+
+//     std::string viaName = stripDefQuotes(tokens[1]);
+
+//     std::string viaRuleName;
+//     std::string bottomLayer;
+//     std::string cutLayer;
+//     std::string topLayer;
+
+//     int cutSizeX         = 0;
+//     int cutSizeY         = 0;
+//     int cutSpacingX      = 0;
+//     int cutSpacingY      = 0;
+//     int enclosureBottomX = 0;
+//     int enclosureBottomY = 0;
+//     int enclosureTopX    = 0;
+//     int enclosureTopY    = 0;
+//     int rows             = 1;
+//     int cols             = 1;
+
+//     std::size_t       i = 2;
 //     const std::size_t n = tokens.size();
 
-//     // Start of a new PIN definition
-//     if (!mPinParseState.inPin) {
-//         if (tokens[0] != "-") {
-//             // Ignore lines until we see "- pinName"
-//             return;
-//         }
-//         if (n < 2) {
-//             return;
-//         }
-//         mPinParseState.reset();
-//         mPinParseState.inPin   = true;
-//         mPinParseState.pinName = IdString(stripDefQuotes(tokens[1]));
-//         i = 2; // Continue parsing remaining tokens on this line
-//     }
-
-//     for (; i < n; ++i) {
+//     while (i < n) {
 //         const std::string& tok = tokens[i];
 
-//         if (tok == ";") {
-//             // End of this PIN definition
-//             if (mPinParseState.isPowerOrGround &&
-//             mPinParseState.hasLocation
-//             &&
-//                 mPinParseState.netName.valid()) {
-//                 auto it = mNetByName.find(mPinParseState.netName);
-//                 if (it != mNetByName.end()) {
-//                     Bump b;
-//                     b.netName = mPinParseState.netName;
-//                     b.x_um =
-//                       static_cast<double>(mPinParseState.xDbu) /
-//                       mDbuPerMicron;
-//                     b.y_um =
-//                       static_cast<double>(mPinParseState.yDbu) /
-//                       mDbuPerMicron;
-//                     mBumps.push_back(std::move(b));
-//                 }
-//             }
-//             mPinParseState.reset();
-//             break;
-//         } else if (tok == "NET") {
-//             if (i + 1 < n) {
-//                 mPinParseState.netName =
-//                 IdString(stripDefQuotes(tokens[++i]));
-//                 // If the net is in our PDN set, treat as power/ground
-//                 auto it = mNetByName.find(mPinParseState.netName);
-//                 if (it != mNetByName.end()) {
-//                     mPinParseState.isPowerOrGround = true;
-//                 }
-//             }
-//         } else if (tok == "USE") {
-//             if (i + 1 < n) {
-//                 const std::string& useType = tokens[++i];
-//                 if (useType == "POWER" || useType == "GROUND") {
-//                     mPinParseState.isPowerOrGround = true;
-//                 }
-//             }
-//         } else if (tok == "PLACED" || tok == "FIXED") {
-//             // Look ahead for "( x y )"
-//             int         x = 0, y = 0;
-//             bool        found = false;
-//             std::size_t j     = i + 1;
-//             for (; j + 3 < n; ++j) {
-//                 if (tokens[j] == "(") {
-//                     if (parseIntSafe(tokens[j + 1], x) &&
-//                         parseIntSafe(tokens[j + 2], y)) {
-//                         found = true;
-//                     }
-//                     break;
-//                 }
-//             }
-//             if (found) {
-//                 mPinParseState.xDbu        = x;
-//                 mPinParseState.yDbu        = y;
-//                 mPinParseState.hasLocation = true;
-//             }
-//         } else {
-//             // Ignore other tokens (DIRECTION, LAYER, PORT, '+', etc.)
+//         if (tok == "+") {
+//             ++i;
 //             continue;
 //         }
+//         if (tok == ";") {
+//             break;
+//         }
+
+//         if (tok == "VIARULE" && i + 1 < n) {
+//             viaRuleName = stripDefQuotes(tokens[i + 1]);
+//             i += 2;
+//         } else if (tok == "CUTSIZE" && i + 2 < n) {
+//             parseIntSafe(tokens[i + 1], cutSizeX);
+//             parseIntSafe(tokens[i + 2], cutSizeY);
+//             i += 3;
+//         } else if (tok == "LAYERS" && i + 3 < n) {
+//             bottomLayer = stripDefQuotes(tokens[i + 1]);
+//             cutLayer    = stripDefQuotes(tokens[i + 2]);
+//             topLayer    = stripDefQuotes(tokens[i + 3]);
+//             i += 4;
+//         } else if (tok == "CUTSPACING" && i + 2 < n) {
+//             parseIntSafe(tokens[i + 1], cutSpacingX);
+//             parseIntSafe(tokens[i + 2], cutSpacingY);
+//             i += 3;
+//         } else if (tok == "ENCLOSURE" && i + 4 < n) {
+//             // DEF syntax: ENCLOSURE <botX> <botY> <topX> <topY>
+//             parseIntSafe(tokens[i + 1], enclosureBottomX);
+//             parseIntSafe(tokens[i + 2], enclosureBottomY);
+//             parseIntSafe(tokens[i + 3], enclosureTopX);
+//             parseIntSafe(tokens[i + 4], enclosureTopY);
+//             i += 5;
+//         } else if (tok == "ROWCOL" && i + 2 < n) {
+//             parseIntSafe(tokens[i + 1], rows);
+//             parseIntSafe(tokens[i + 2], cols);
+//             i += 3;
+//         } else {
+//             // Ignore other keywords we don't need for coarse modeling
+//             ++i;
+//         }
+//     }
+
+//     // Register via geometry in TechDatabase if we have basic connectivity
+//     if (!bottomLayer.empty() && !topLayer.empty()) {
+//         mTechDb.addViaGeometryFromDef(viaName,
+//                                       viaRuleName,
+//                                       bottomLayer,
+//                                       cutLayer,
+//                                       topLayer,
+//                                       cutSizeX,
+//                                       cutSizeY,
+//                                       cutSpacingX,
+//                                       cutSpacingY,
+//                                       enclosureBottomX,
+//                                       enclosureBottomY,
+//                                       enclosureTopX,
+//                                       enclosureTopY,
+//                                       rows,
+//                                       cols);
 //     }
 // }
-
-void CoarsePdnBuilder3D::handleViasLine(const std::string& line) {
-    std::vector<std::string> tokens = tokenizeDef(line);
-    if (tokens.empty()) return;
-
-    // We only care about lines that start a via definition:
-    //   - via4_1600x1600 + VIARULE ... + CUTSIZE ... + LAYERS ..
-    if (tokens[0] != "-" || tokens.size() < 2) {
-        return;
-    }
-
-    std::string viaName = stripDefQuotes(tokens[1]);
-
-    std::string viaRuleName;
-    std::string bottomLayer;
-    std::string cutLayer;
-    std::string topLayer;
-
-    int cutSizeX         = 0;
-    int cutSizeY         = 0;
-    int cutSpacingX      = 0;
-    int cutSpacingY      = 0;
-    int enclosureBottomX = 0;
-    int enclosureBottomY = 0;
-    int enclosureTopX    = 0;
-    int enclosureTopY    = 0;
-    int rows             = 1;
-    int cols             = 1;
-
-    std::size_t       i = 2;
-    const std::size_t n = tokens.size();
-
-    while (i < n) {
-        const std::string& tok = tokens[i];
-
-        if (tok == "+") {
-            ++i;
-            continue;
-        }
-        if (tok == ";") {
-            break;
-        }
-
-        if (tok == "VIARULE" && i + 1 < n) {
-            viaRuleName = stripDefQuotes(tokens[i + 1]);
-            i += 2;
-        } else if (tok == "CUTSIZE" && i + 2 < n) {
-            parseIntSafe(tokens[i + 1], cutSizeX);
-            parseIntSafe(tokens[i + 2], cutSizeY);
-            i += 3;
-        } else if (tok == "LAYERS" && i + 3 < n) {
-            bottomLayer = stripDefQuotes(tokens[i + 1]);
-            cutLayer    = stripDefQuotes(tokens[i + 2]);
-            topLayer    = stripDefQuotes(tokens[i + 3]);
-            i += 4;
-        } else if (tok == "CUTSPACING" && i + 2 < n) {
-            parseIntSafe(tokens[i + 1], cutSpacingX);
-            parseIntSafe(tokens[i + 2], cutSpacingY);
-            i += 3;
-        } else if (tok == "ENCLOSURE" && i + 4 < n) {
-            // DEF syntax: ENCLOSURE <botX> <botY> <topX> <topY>
-            parseIntSafe(tokens[i + 1], enclosureBottomX);
-            parseIntSafe(tokens[i + 2], enclosureBottomY);
-            parseIntSafe(tokens[i + 3], enclosureTopX);
-            parseIntSafe(tokens[i + 4], enclosureTopY);
-            i += 5;
-        } else if (tok == "ROWCOL" && i + 2 < n) {
-            parseIntSafe(tokens[i + 1], rows);
-            parseIntSafe(tokens[i + 2], cols);
-            i += 3;
-        } else {
-            // Ignore other keywords we don't need for coarse modeling
-            ++i;
-        }
-    }
-
-    // Register via geometry in TechDatabase if we have basic connectivity
-    if (!bottomLayer.empty() && !topLayer.empty()) {
-        mTechDb.addViaGeometryFromDef(viaName,
-                                      viaRuleName,
-                                      bottomLayer,
-                                      cutLayer,
-                                      topLayer,
-                                      cutSizeX,
-                                      cutSizeY,
-                                      cutSpacingX,
-                                      cutSpacingY,
-                                      enclosureBottomX,
-                                      enclosureBottomY,
-                                      enclosureTopX,
-                                      enclosureTopY,
-                                      rows,
-                                      cols);
-    }
-}
 
 // For example:
 // - U_TSV_PG_Power1_VDD_PERI_MEDIA1_0 TSV_PG_POWER1
@@ -1214,24 +1161,6 @@ void CoarsePdnBuilder3D::handleComponentsLine(const std::string& line,
     std::vector<std::string> tokens = tokenizeDef(line);
     if (tokens.empty()) return;
 
-    // // Start of a new component: "- <instName> <macroName> ..."
-    // if (tokens[0] == "-") {
-    //     // Finalize previous component (if any)
-    //     if (!currentInstName.empty() && !currentMacroName.empty()) {
-    //         addTsvInstance(
-    //           currentInstName, currentMacroName, currentX, currentY);
-    //     }
-
-    //     currentInstName.clear();
-    //     currentMacroName.clear();
-    //     currentX = currentY = 0;
-
-    //     if (tokens.size() >= 3) {
-    //         currentInstName  = stripDefQuotes(tokens[1]);
-    //         currentMacroName = stripDefQuotes(tokens[2]);
-    //     }
-    //     return;
-    // }
     std::size_t       i = 0;
     const std::size_t n = tokens.size();
 
@@ -1314,17 +1243,24 @@ static int representativeCol(const ConductanceGrid2D& grid, double x0,
 void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
                                            const std::string& viaName,
                                            int xDbu, int yDbu) {
-    auto netIt = mNetByName.find(IdString::tryLookup(netName));
-    if (netIt == mNetByName.end()) return;
+    auto netIt = mNetByName.find(IdString(netName));
+    if (netIt == mNetByName.end()) {
+        mMissingNets.insert(IdString(netName));
+        return;
+    }
     const int netIndex = netIt->second.index;
     if (!isNetSelected(netIndex)) return;
 
-    const TechVia* via = mTechDb.getVia(IdString::tryLookup(viaName));
-    if (!via) return;
-    if (via->resistance <= 0.0) return;
+    auto viaIt = mDieConfig.tech.vias.find(IdString(viaName));
+    if (viaIt == mDieConfig.tech.vias.end()) {
+        mMissingVias.insert(IdString(viaName));
+        return;
+    }
+    const auto& via = viaIt->second;
+    if (via.resistance <= 0.0) return;
 
-    auto blIt = mLayerNameToIndex.find(via->bottomLayer);
-    auto tlIt = mLayerNameToIndex.find(via->topLayer);
+    auto blIt = mLayerNameToIndex.find(via.bottomLayer);
+    auto tlIt = mLayerNameToIndex.find(via.topLayer);
     if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end())
         return;
 
@@ -1340,57 +1276,14 @@ void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
     v.viaName  = IdString::tryLookup(viaName);
     v.lb       = lb;
     v.lt       = lt;
-    v.g        = 1.0 / via->resistance;
+    v.g        = 1.0 / via.resistance;
 
     mRecordedVias.push_back(v);
 }
 
-// void CoarsePdnBuilder3D::addStripeRectangle(const std::string& netName,
-//                                             const std::string&
-//                                             layerName, int x0Dbu, int
-//                                             y0Dbu, int x1Dbu, int y1Dbu)
-//                                             {
-//     auto netIt = mNetByName.find(IdString::tryLookup(netName));
-//     if (netIt == mNetByName.end()) return;
-//     int netIndex = netIt->second.index;
-
-//     auto layerIdxIt =
-//     mLayerNameToIndex.find(IdString::tryLookup(layerName)); if
-//     (layerIdxIt
-//     == mLayerNameToIndex.end()) return; int layerIndex =
-//     layerIdxIt->second;
-
-//     const TechLayer* layer =
-//     mTechDb.getLayer(IdString::tryLookup(layerName)); if (!layer)
-//     return;
-
-//     // Convert to µm
-//     double x0 = static_cast<double>(x0Dbu) / mDbuPerMicron;
-//     double y0 = static_cast<double>(y0Dbu) / mDbuPerMicron;
-//     double x1 = static_cast<double>(x1Dbu) / mDbuPerMicron;
-//     double y1 = static_cast<double>(y1Dbu) / mDbuPerMicron;
-
-//     if (x1 < x0) std::swap(x0, x1);
-//     if (y1 < y0) std::swap(y0, y1);
-
-//     double widthX = x1 - x0;
-//     double widthY = y1 - y0;
-//     if (widthX <= 0.0 || widthY <= 0.0) return;
-
-//     bool isHorizontal = (widthX >= widthY);
-
-//     ConductanceGrid2D& grid = mInPlaneGrids[netIndex][layerIndex];
-//     if (isHorizontal) {
-//         accumulateHorizontalStripe(grid, *layer, x0, y0, x1, y1);
-//     } else {
-//         accumulateVerticalStripe(grid, *layer, x0, y0, x1, y1);
-//     }
-// }
-
-void CoarsePdnBuilder3D::accumulateHorizontalStripe(ConductanceGrid2D& grid,
-                                                    const TechLayer&   layer,
-                                                    double x0, double y0,
-                                                    double x1, double y1) {
+void CoarsePdnBuilder3D::accumulateHorizontalStripe(
+  ConductanceGrid2D& grid, const MetalLayerConfig& layer, double x0, double y0,
+  double x1, double y1) {
     double stripeWidth = y1 - y0; // µm
     if (stripeWidth <= 0.0) return;
 
@@ -1433,10 +1326,9 @@ void CoarsePdnBuilder3D::accumulateHorizontalStripe(ConductanceGrid2D& grid,
     // }
 }
 
-void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D& grid,
-                                                  const TechLayer&   layer,
-                                                  double x0, double y0,
-                                                  double x1, double y1) {
+void CoarsePdnBuilder3D::accumulateVerticalStripe(
+  ConductanceGrid2D& grid, const MetalLayerConfig& layer, double x0, double y0,
+  double x1, double y1) {
     double stripeWidth = x1 - x0; // µm
     if (stripeWidth <= 0.0) return;
 
@@ -1570,8 +1462,12 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
                                            const std::string& macroName,
                                            int xDbu, int yDbu) {
     // Only TSV macros should be recorded
-    const TechTsv* tsv = mTechDb.getTsv(IdString(macroName));
-    if (!tsv) return;
+    auto tsvIt = mDieConfig.tech.tsvs.find(IdString(macroName));
+    if (tsvIt == mDieConfig.tech.tsvs.end()) {
+        mMissingTsvs.insert(IdString(macroName));
+        return;
+    }
+    const auto& tsv = tsvIt->second;
 
     // Coordinates are required for correct tile snapping
     if (xDbu < 0 || yDbu < 0) {
@@ -1590,17 +1486,18 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
         return;
     }
 
-    auto netIt = mNetByName.find(IdString::tryLookup(netName));
+    auto netIt = mNetByName.find(IdString(netName));
     if (netIt == mNetByName.end()) {
         // Not a PDN net we care about
+        mMissingNets.insert(IdString(netName));
         return;
     }
     const int netIndex = netIt->second.index;
     if (!isNetSelected(netIndex)) return;
 
     // Resolve layers
-    auto blIt = mLayerNameToIndex.find(tsv->bottomLayer);
-    auto tlIt = mLayerNameToIndex.find(tsv->topLayer);
+    auto blIt = mLayerNameToIndex.find(tsv.bottomLayer);
+    auto tlIt = mLayerNameToIndex.find(tsv.topLayer);
     if (blIt == mLayerNameToIndex.end() || tlIt == mLayerNameToIndex.end()) {
         return;
     }
@@ -1610,7 +1507,7 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
 
     if (lb < 0 || lb >= mNumLayers || lt < 0 || lt >= mNumLayers) return;
     if (lb == lt) return;
-    if (tsv->resistance <= 0.0) return;
+    if (tsv.resistance <= 0.0) return;
 
     TsvRec t;
     t.netIndex = netIndex;
@@ -1619,7 +1516,7 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
     t.tsvName  = IdString(macroName); // stored only for debugging/metadata
     t.lb       = lb;
     t.lt       = lt;
-    t.g        = 1.0 / tsv->resistance;
+    t.g        = 1.0 / tsv.resistance;
 
     mRecordedTsvs.push_back(std::move(t));
 }
@@ -1670,6 +1567,10 @@ std::uint64_t CoarsePdnBuilder3D::makeGridKey(int netIndex, int lb, int lt) {
 // CircuitGraph construction
 // -----------------------------------------------------------------------------
 void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
+    for (auto n : mMissingNets) PDN_WARN("Net '%s' not defined", n.c_str());
+    for (auto n : mMissingVias) PDN_WARN("Via '%s' not defined", n.c_str());
+    for (auto n : mMissingTsvs) PDN_WARN("TSV '%s' not defined", n.c_str());
+
     if (mRecordedStripes.empty() && mRecordedVias.empty() &&
         mRecordedTsvs.empty()) {
         return;
@@ -1758,8 +1659,10 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         if (s.netIndex < 0 || s.netIndex >= mNumNets) continue;
         if (s.layerIndex < 0 || s.layerIndex >= mNumLayers) continue;
 
-        const TechLayer* layer = mTechDb.getLayer(mLayerOrder[s.layerIndex]);
-        if (!layer) continue;
+        auto layerIt =
+          mDieConfig.tech.metalLayers.find(mLayerOrder[s.layerIndex]);
+        if (layerIt == mDieConfig.tech.metalLayers.end()) continue;
+        const auto& layer = layerIt->second;
 
         // Convert to µm
         double x0 = static_cast<double>(s.x0) / mDbuPerMicron;
@@ -1777,9 +1680,9 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         ConductanceGrid2D& grid         = m2DGrids[s.netIndex][s.layerIndex];
         const bool         isHorizontal = (wX >= wY);
         if (isHorizontal) {
-            accumulateHorizontalStripe(grid, *layer, x0, y0, x1, y1);
+            accumulateHorizontalStripe(grid, layer, x0, y0, x1, y1);
         } else {
-            accumulateVerticalStripe(grid, *layer, x0, y0, x1, y1);
+            accumulateVerticalStripe(grid, layer, x0, y0, x1, y1);
         }
     }
 
@@ -2230,10 +2133,9 @@ bool CoarsePdnBuilder3D::parseViaFromTokens(
 // Net registration helper
 // -----------------------------------------------------------------------------
 
-void CoarsePdnBuilder3D::addNetIfAbsent(const std::string& name, bool isPower,
+void CoarsePdnBuilder3D::addNetIfAbsent(IdString name, bool isPower,
                                         bool isGround) {
-    IdString nameId(name);
-    auto     it = mNetByName.find(nameId);
+    auto it = mNetByName.find(name);
     if (it != mNetByName.end()) {
         if (isPower) it->second.isPower = true;
         if (isGround) it->second.isGround = true;
@@ -2246,11 +2148,11 @@ void CoarsePdnBuilder3D::addNetIfAbsent(const std::string& name, bool isPower,
         return;
     }
     NetInfo info;
-    info.index         = static_cast<int>(mNetByIndex.size());
-    info.name          = nameId;
-    info.isPower       = isPower;
-    info.isGround      = isGround;
-    mNetByName[nameId] = info;
+    info.index       = static_cast<int>(mNetByIndex.size());
+    info.name        = name;
+    info.isPower     = isPower;
+    info.isGround    = isGround;
+    mNetByName[name] = info;
     mNetByIndex.push_back(info);
 }
 

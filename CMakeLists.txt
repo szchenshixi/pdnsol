@@ -39,7 +39,7 @@ target_compile_features(util_lib PRIVATE cxx_std_20)
 
 add_library(
   pdnsol_lib STATIC
-  src/io/tech_db.cpp
+  # src/io/tech_db.cpp
   src/io/exporter_viz.cpp
   src/io/parser_def.cpp
   src/io/parser_config.cpp

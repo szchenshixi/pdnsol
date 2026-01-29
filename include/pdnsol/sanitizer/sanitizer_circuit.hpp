@@ -1,11 +1,7 @@
 #pragma once
 
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
 #include <vector>
-
-#include <nlohmann/json.hpp>
 
 #include "pdnsol/struct/circuit.hpp"
 #include "pdnsol/utils/id_string.hpp"
@@ -14,7 +10,7 @@ namespace pdnsol {
 class CircuitConnectivityChecker {
   private:
     struct GraphNode {
-        IdString::Set<IdString> neighbors;
+        IdString::Set neighbors;
         bool                    visited = false;
         IdString                id;
     };

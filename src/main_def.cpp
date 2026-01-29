@@ -1,6 +1,7 @@
 #include <iostream>
 
 #include "pdnsol/io/exporter_viz.hpp"
+#include "pdnsol/io/parser_config.hpp"
 #include "pdnsol/io/parser_def.hpp"
 #include "pdnsol/sanitizer/sanitizer_circuit.hpp"
 #include "pdnsol/sanitizer/sanitizer_config.hpp"
@@ -28,150 +29,44 @@ int main(int argc, char** argv) {
         return 1;
     }
     init();
-    std::string   simulationConfigPath = argv[1];
-    std::ifstream inFile(simulationConfigPath);
-    if (!inFile.is_open()) {
-        PDN_FATAL("Cannot open file %s", simulationConfigPath.c_str());
-    }
-    const Json configJ = Json::parse(inFile);
-    if (!integrityCheck(configJ, simulationConfigPath)) {
-        PDN_FATAL("Cannot proceed due to the above error. Abort.");
+    std::string simulationConfigPath = argv[1];
+
+    Config config;
+    if (!Config::fromFile(simulationConfigPath, config)) {
+        PDN_FATAL("Cannot open file '%s'", simulationConfigPath.c_str());
     }
 
     // ============================================================
-    // 1) Technology Database Setup
+    // 1) Circuit Construction
     // ============================================================
 
-    TechDatabase techDb;
-    const Json&  techConfigJ = configJ["tech"];
+    SimulationConfig simConfig = config.getSimulation();
+    NetFilter        f(simConfig.netFilter);
 
-    // Metal Layers - Add ALL layers from DEF
-    // Format: addLayer(layer_name, resistivity_Ω·µm, thickness_µm)
-    // Example: addLayer("met1", 0.0300, 0.2000)
-    for (const auto& j : techConfigJ["metal_layers"]) {
-        const std::string& layerName   = j["name"];
-        const double       resistivity = j["resistivity_ohm_x_um"];
-        const double       thickness   = j["thickness_um"];
-        techDb.addLayer(layerName, resistivity, thickness);
+    CircuitGraph circ;
+    {
+        IdString                  dieName("die0");
+        DieConfig                 dieConfig   = config.getDie(dieName);
+        IdString::Map<GridConfig> gridConfigs = simConfig.getDieGrids(dieName);
+
+        CircuitGraph       circ0;
+        CoarsePdnBuilder3D builder(dieConfig, gridConfigs);
+
+        if (!builder.buildCoarsePdnFromDef(
+              dieConfig.files.defPath, circ0, f)) {
+            PDN_FATAL("Failed to build 3D coarse PDN graph");
+        }
+        circ.purgeParallelElements();
+        circ.purgeIsolatedNodes();
+
+        // ============================================================
+        // 2) Aggregate current/voltage sources into the circuits
+        // ============================================================
+        CircuitDecorator decorator(circ, dieConfig, f);
+        decorator.build();
     }
 
-    // Vias - Add ALL vias from DEF VIAS section
-    // Format: addVia(via_name, bottom_layer, top_layer, resistance_Ω)
-    // Example: addVia("via_1600x480", "met1", "met2", 0.000100)
-    for (const auto& j : techConfigJ["vias"]) {
-        const std::string& name        = j["name"];
-        const std::string& bottomLayer = j["bottom_layer"];
-        const std::string& topLayer    = j["top_layer"];
-        const double       resistance  = j["resistance_ohm"];
-        techDb.addVia(name, bottomLayer, topLayer, resistance);
-    }
-
-    for (const auto& j : techConfigJ["tsvs"]) {
-        const std::string& name        = j["name"];
-        const std::string& bottomLayer = j["bottom_layer"];
-        const std::string& topLayer    = j["top_layer"];
-        const double       resistance  = j["resistance_ohm"];
-        techDb.addTsv(name, bottomLayer, topLayer, resistance);
-    }
-
-    // ============================================================
-    // 2) PDN Configuration
-    // ============================================================
-
-    std::unordered_map<std::string, DecoratorConfig::VSrcProperty> vsrcs;
-    // Power nets from SPECIALNETS section
-    std::vector<std::string>                                       powerNets;
-    for (const auto& j : techConfigJ["power_nets"]) {
-        std::string name       = j["name"];
-        ScalarType  voltage    = j["voltage_volt"];
-        ScalarType  resistance = j["package_resistance_ohm"];
-        vsrcs.insert({name, {voltage, resistance}});
-        powerNets.push_back(std::move(name));
-    }
-
-    // Ground nets from SPECIALNETS section
-    std::vector<std::string> groundNets = {"VSS"};
-    for (const auto& j : techConfigJ["ground_nets"]) {
-        std::string name       = j["name"];
-        ScalarType  voltage    = j["voltage_volt"];
-        ScalarType  resistance = j["package_resistance_ohm"];
-        vsrcs.insert({name, {voltage, resistance}});
-        groundNets.push_back(std::move(name));
-    }
-
-    // Metal layer order (bottom to top)
-    // Example: layerOrder = {"met1", "met2", "met3", "met4", "met5"}
-    std::vector<std::string> layerOrder;
-    layerOrder.reserve(techConfigJ["layer_order"].size());
-    for (const auto& j : techConfigJ["layer_order"]) {
-        std::string layerName = j.get<std::string>();
-        layerOrder.push_back(std::move(layerName));
-    }
-
-    // ============================================================
-    // 3) Simulation Configuration
-    // ============================================================
-
-    const Json&               simConfigJ     = configJ["simulation"];
-    const Json&               gridConfigJ    = simConfigJ["grid"];
-    const int                 defaultStrideX = gridConfigJ["default"]["sx"];
-    const int                 defaultStrideY = gridConfigJ["default"]["sy"];
-    const LayerGridResolution defaultGridRes = {defaultStrideX,
-                                                defaultStrideY};
-
-    IdString::Map<LayerGridResolution> perLayerGridRes;
-    // Example: stride_X/Y feature is under construction
-    // "M10": { "nx": 64, "ny": 64, "sx": -1, "sy": -1 }
-    for (const auto& [l, j] : gridConfigJ.items()) {
-        IdString  layerName        = IdString(l);
-        const int strideX          = j["sx"];
-        const int strideY          = j["sy"];
-        perLayerGridRes[layerName] = LayerGridResolution{strideX, strideY};
-    }
-
-    const Json&        fileConfigJ    = configJ["file"];
-    const std::string& defPath        = fileConfigJ["def_path"];
-    const std::string& currentSrcPath = fileConfigJ["current_src_path"];
-    const std::string& voltageSrcPath = fileConfigJ["voltage_src_path"];
-    const std::string& bumpLayer      = simConfigJ["bump_layer"];
-
-    // ============================================================
-    // 4) Circuit Construction
-    // ============================================================
-
-    // Option1: Select the nets
-    // pdnsol::NetFilter f;
-    // f.includePower  = true;
-    // f.includeGround = true; // include both if you want both graphs
-
-    // Option2: Select the specific nets
-    pdnsol::NetFilter netFilter;
-    netFilter.include = {"VSS"};
-
-    CircuitGraph       circ;
-    CoarsePdnBuilder3D builder(techDb,
-                               defaultGridRes,
-                               perLayerGridRes,
-                               powerNets,
-                               groundNets,
-                               layerOrder);
-    if (!builder.buildCoarsePdnFromDef(defPath, circ, netFilter)) {
-        PDN_FATAL("Failed to build 3D coarse PDN graph");
-    }
-    circ.purgeParallelElements();
-    circ.purgeIsolatedNodes();
-
-    // ============================================================
-    // 5) Aggregate current/voltage sources into the circuits
-    // ============================================================
-
-    DecoratorConfig decoratorConfig;
-    decoratorConfig.currentConfigPath         = currentSrcPath;
-    decoratorConfig.voltageConfigPath         = voltageSrcPath;
-    decoratorConfig.voltageSourceLandingLayer = bumpLayer;
-    decoratorConfig.voltageSources            = std::move(vsrcs);
-    CircuitDecorator decorator(circ, decoratorConfig, netFilter);
-    decorator.build();
+    // TODO: Merge a second die onto the base die based on a given interface layer pairs
 
     PDN_INFO("3D Coarse PDN graph built");
     PDN_INFO("Nodes:      %zu", circ.mNodes.size());

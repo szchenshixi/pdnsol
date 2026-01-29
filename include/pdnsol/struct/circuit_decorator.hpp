@@ -11,17 +11,6 @@
 #include "pdnsol/utils/id_string.hpp"
 
 namespace pdnsol {
-struct DecoratorConfig {
-    struct VSrcProperty {
-        ScalarType voltage;  // Volt
-        ScalarType packageR; // Ohm
-    };
-    std::string                                   currentConfigPath;
-    std::string                                   voltageConfigPath;
-    std::string                                   voltageSourceLandingLayer;
-    std::unordered_map<std::string, VSrcProperty> voltageSources;
-};
-
 class CircuitDecorator {
     struct RectRegion {
         Tick xMin;
@@ -30,10 +19,10 @@ class CircuitDecorator {
         Tick yMax;
     };
     struct CurrentRegion {
-        RectRegion rect;
-        IdString   layer;
-        IdString::Map<ScalarType>
-          netCurrents; // net name -> total current in Amp
+        RectRegion                rect;
+        IdString                  layer;
+        // net name -> total current in Amp
+        IdString::Map<ScalarType> netCurrents;
     };
 
     struct VoltageRegion {
@@ -43,14 +32,14 @@ class CircuitDecorator {
     };
 
   public:
-    CircuitDecorator(CircuitGraph& inGraph, const DecoratorConfig& cfg,
+    CircuitDecorator(CircuitGraph& inGraph, const DieConfig& dieConfig,
                      const NetFilter& netFilter = NetFilter{});
     void build();
 
   private:
-    CircuitGraph&   mIn;
-    DecoratorConfig mCfg;
-    NetFilter       mNetFilter;
+    CircuitGraph&    mIn;
+    const DieConfig& mDieConfig;
+    NetFilter        mNetFilter;
 
     // -------------------------------------------------------------------------
     // High-Level Entries

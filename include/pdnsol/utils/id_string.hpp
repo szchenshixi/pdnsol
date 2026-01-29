@@ -70,7 +70,6 @@ class IdString {
 
     template <typename DataType>
     using Map = std::unordered_map<IdString, DataType, IdString::Hash>;
-    template <typename DataType>
     using Set = std::unordered_set<IdString, IdString::Hash>;
 
   private:

@@ -131,7 +131,7 @@ CircuitConnectivityChecker::checkIsolation(const CircuitGraph& circuit) {
         compInfo.nodes = componentNodes;
 
         // Create a set for fast membership check
-        IdString::Set<IdString> nodeSet(componentNodes.begin(),
+        IdString::Set nodeSet(componentNodes.begin(),
                                         componentNodes.end());
 
         // Check for power sources in this component
@@ -333,7 +333,7 @@ CircuitConnectivityChecker::findShortCircuits(const CircuitGraph& circuit) {
         }
     }
 
-    // Voltage sources with 0V are allowed shorts
+    // [Deprecated] Voltage sources with 0V are allowed shorts
     // for (const auto& vsrc : circuit.mVsrcs) {
     //     if (vsrc.V > 0.0) {
     //         shorts.push_back(

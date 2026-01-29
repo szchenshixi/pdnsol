@@ -257,7 +257,7 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
         auto it = mNodes.find(name);
         if (it == mNodes.end()) {
             Node groundNode;
-            groundNode.name = IdString("GND");
+            groundNode.name = GND;
             it = mNodes.emplace(name, std::move(groundNode)).first;
         }
         return it->second;
@@ -282,7 +282,7 @@ Node& CircuitGraph::ensureNode(const IdString& name, int net,
 }
 
 void CircuitGraph::ensureAllReferencedNodesExist() {
-    IdString::Set<IdString> names;
+    IdString::Set names;
     // from already-known nodes
     for (const auto& kv : mNodes) names.insert(kv.first);
     // from devices
@@ -318,9 +318,9 @@ void CircuitGraph::ensureAllReferencedNodesExist() {
         addName(src.toNode);
     }
     // Always ensure ground marker exists if referenced by any element
-    if (names.count(IdString("GND")) == 0) {
+    if (names.count(GND) == 0) {
         if (refersToGround()) {
-            ensureNode(IdString("GND"));
+            ensureNode(GND);
         }
     }
 }

@@ -116,7 +116,7 @@ HeatmapByNet buildIRDropHeatmapsMultiNet(const CircuitGraph&        circ,
     }
 
     // Layer filter (optional)
-    IdString::Set<IdString> layerFilter;
+    IdString::Set layerFilter;
     if (!cfg.includedLayers.empty()) {
         layerFilter.insert(cfg.includedLayers.begin(),
                            cfg.includedLayers.end());

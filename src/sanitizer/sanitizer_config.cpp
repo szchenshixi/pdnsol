@@ -381,43 +381,43 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
         }
 
         // ------------------- layer_order ------------------------------------
-        const Json* orderArr =
-          requireArray(*techJ, "layer_order", "tech.layer_order");
-        if (orderArr) {
-            for (std::size_t i = 0; i < orderArr->size(); ++i) {
-                const Json& lv = (*orderArr)[i];
-                std::string context =
-                  "tech.layer_order[" + std::to_string(i) + "]";
+        // const Json* orderArr =
+        //   requireArray(*techJ, "layer_order", "tech.layer_order");
+        // if (orderArr) {
+        //     for (std::size_t i = 0; i < orderArr->size(); ++i) {
+        //         const Json& lv = (*orderArr)[i];
+        //         std::string context =
+        //           "tech.layer_order[" + std::to_string(i) + "]";
 
-                if (!lv.is_string()) {
-                    PDN_ERROR("Element %zu of 'tech.layer_order' must be a "
-                              "string (config: %s)",
-                              i,
-                              filePath.c_str());
-                    result = false;
-                    continue;
-                }
+        //         if (!lv.is_string()) {
+        //             PDN_ERROR("Element %zu of 'tech.layer_order' must be a "
+        //                       "string (config: %s)",
+        //                       i,
+        //                       filePath.c_str());
+        //             result = false;
+        //             continue;
+        //         }
 
-                std::string layer = lv.get<std::string>();
-                if (layer.empty()) {
-                    PDN_ERROR("Element %zu of 'tech.layer_order' must not be "
-                              "empty (config: %s)",
-                              i,
-                              filePath.c_str());
-                    result = false;
-                    continue;
-                }
+        //         std::string layer = lv.get<std::string>();
+        //         if (layer.empty()) {
+        //             PDN_ERROR("Element %zu of 'tech.layer_order' must not be "
+        //                       "empty (config: %s)",
+        //                       i,
+        //                       filePath.c_str());
+        //             result = false;
+        //             continue;
+        //         }
 
-                if (!metalLayerNames.empty() &&
-                    metalLayerNames.find(layer) == metalLayerNames.end()) {
-                    PDN_ERROR("Layer '%s' in 'tech.layer_order' is not "
-                              "defined in 'tech.metal_layers' (config: %s)",
-                              layer.c_str(),
-                              filePath.c_str());
-                    result = false;
-                }
-            }
-        }
+        //         if (!metalLayerNames.empty() &&
+        //             metalLayerNames.find(layer) == metalLayerNames.end()) {
+        //             PDN_ERROR("Layer '%s' in 'tech.layer_order' is not "
+        //                       "defined in 'tech.metal_layers' (config: %s)",
+        //                       layer.c_str(),
+        //                       filePath.c_str());
+        //             result = false;
+        //         }
+        //     }
+        // }
     }
 
     // -------------------------------------------------------------------------

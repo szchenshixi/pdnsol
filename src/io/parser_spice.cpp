@@ -104,7 +104,7 @@ ParsedNode parseNodeName(const std::string& raw, int32_t coordToMicroScale) {
 
     // Ground mapping
     if (raw == "0" || iequals(raw, "gnd")) {
-        out.id = IdString("GND");
+        out.id = GND;
         return out;
     }
 
@@ -391,7 +391,7 @@ void parseVoltageSource(const std::vector<std::string>& tokens,
     src.V        = V;
     src.type     = Vsrc::OTHER;
     bool connectsToGnd =
-      (pn1.id == IdString("GND") || pn2.id == IdString("GND"));
+      (pn1.id == GND || pn2.id == GND);
 
     bool touchesPackage =
       (isPackageNodeName(n1Str) || isPackageNodeName(n2Str));

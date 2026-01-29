@@ -100,7 +100,7 @@ ParsedNode parsePdNodeName(const std::string& raw, int32_t coordToMircoScale) {
 
     // Map SPICE/SPEF-style ground representations to canonical "GND"
     if (raw == "0" || iequals(raw, "gnd")) {
-        out.mId = IdString("GND");
+        out.mId = GND;
         return out;
     }
 
