@@ -1,0 +1,280 @@
+# Find the configuration options at
+#   https://clang.llvm.org/extra/clang-tidy/checks/readability/identifier-naming.html
+# More information on clang-tidy
+# https://bcain-llvm.readthedocs.io/projects/clang-tools-extra/en/latest/clang-tidy/
+# Online YAML parser
+# https://yaml-online-parser.appspot.com
+%YAML 1.2
+---
+UseColor: true
+# "-" means minors, or ignore the rules in clang-tidy check
+Checks: >-
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  misc-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+# llvm-header-guard
+# cert-*,
+# hicpp-*,
+# mpi-*,
+HeaderFilterRegex: ''
+CheckOptions:
+  # ============================================================================
+  # Settings for readability-* Check
+  # ============================================================================
+  # ----------------------------------------------------------------------------
+  # Declarations
+  # ----------------------------------------------------------------------------
+  - key: readability-redundant-declaration.IgnoreMacros
+    value: 1
+  # ----------------------------------------------------------------------------
+  # Braces
+  # ----------------------------------------------------------------------------
+  - key: readability-braces-around-statements.ShortStatementLines
+    value: 0
+
+  # ----------------------------------------------------------------------------
+  # Control Flow
+  # ----------------------------------------------------------------------------
+  - key: readability-else-after-return.WarnOnUnfixable
+    value: true
+  - key: readability-else-after-return.WarnOnConditionVariables
+    value: true
+  - key: readability-qualified-auto.AddConstToQualified
+    value: 1
+
+  # ----------------------------------------------------------------------------
+  # Functions
+  # ----------------------------------------------------------------------------
+  - key: readability-function-size.LineThreshold
+    value: 30
+  - key: readability-function-size.StatementThreshold
+    value: 25
+  - key: readability-function-size.ParameterThreshold
+    value: 3
+  - key: readability-function-size.BranchThreshold
+    value: 5
+  - key: readability-function-size.NestingThreshold
+    value: 3
+  - key: readability-function-size.VariableThreshold
+    value: 6
+  - key: readability-inconsistent-declaration-paramter-name.Strict
+    value: 1
+
+  # ----------------------------------------------------------------------------
+  # Boolean Expressions
+  # ----------------------------------------------------------------------------
+  - key: readability-simplifie-boolean-expr.ChainedConditionalReturn
+    value: 1
+  - key: readability-simplifie-boolean-expr.ChainedConditionalAssignment
+    value: 1
+
+  # ----------------------------------------------------------------------------
+  # Implicit Conversions
+  # ----------------------------------------------------------------------------
+  - key: readability-implicit-bool-conversion.AllowIntegerConditions
+    value: 0
+  - key: readability-implicit-bool-conversion.AllowPointerConditions
+    value: 0
+
+  # ----------------------------------------------------------------------------
+  # Magic Numbers
+  # ----------------------------------------------------------------------------
+  - key: readability-magic-numbers.IgnoredIntegerValues
+    value: 0;1;2;3;4;5;6;7;8;9;10;100;1000;10000;
+  - key: cppcoreguidelines-avoid-magic-numbers.IgnoredIntegerValues
+    value: 0;1;2;3;4;5;6;7;8;9;10;100;1000;10000;
+  - key: IgnorePowersOf2IntegerValues
+    value: true
+  - key: readability-magic-numbers.IgnoredFloatingPointValues
+    value: 0.25;0.5;0.75;1.0;2.0;3.0;10.0;100.0;1000.0;10000.0;0.1;0.001;0.0001;-1.0;-2.0;-3.0;
+  - key: cppcoreguidelines-avoid-magic-numbers.IgnoredFloatingPointValues
+    value: 0.25;0.5;0.75;1.0;2.0;3.0;10.0;100.0;1000.0;10000.0;0.1;0.001;0.0001;-1.0;-2.0;-3.0;
+  # ----------------------------------------------------------------------------
+  # Classes
+  # ----------------------------------------------------------------------------
+  - key: readability-redundant-access-specifiers.CheckFirstDeclaration
+    value: 1
+
+  # ----------------------------------------------------------------------------
+  # Naming Conventions
+  # ----------------------------------------------------------------------------
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: 'i|j|k|x|y|z|a|b|aa|bb|ip|os|r|g'
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: 'i|j|k|x|y|z|a|b|aa|bb|ip|os|r|g'
+  - key: readability-identifier-length.IgnoredLoopCounterNames
+    value: 'i|j|k|x|y|z|a|b|aa|bb|ip|os|r|g'
+
+  # The settings here are more explicit than they need be. This will make it
+  # easier to tweak for other projects.
+  #
+  # The following cases are available:
+  # * lower_case
+  # * UPPER_CASE
+  # * camelBack
+  # * CamelCase
+  # * camel_Snake_Back
+  # * Camel_Snake_Case
+  # * aNy_CasE
+  #
+  # Each setting has three options that can be set:
+  # * <Setting>Prefix
+  # * <Setting>Case
+  # * <Setting>Postfix
+
+  - key: readability-identifier-naming.AggressiveDependentMemberLookup
+    value: 1
+
+  # ======================== Classes, Unions and Structs =======================
+  # Class Names
+  - key: readability-identifier-naming.ClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.AbstractClassPrefix
+    value: I
+  - key: readability-identifier-naming.AbstractClassCase
+    value: CamelCase
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.UnionCase
+    value: CamelCase
+
+  # Class Members
+  - key: readability-identifier-naming.ClassConstantPrefix
+    value: mk
+  - key: readability-identifier-naming.ClassConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.ClassMemberPrefix   # Stiatic member
+    value: ms
+  - key: readability-identifier-naming.ClassMemberCase     # Stiatic member
+    value: CamelCase
+  - key: readability-identifier-naming.PublicMemberPrefix  # Struct variables
+    value:
+  - key: readability-identifier-naming.PublicMemberCase    # Struct variables
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMemberPrefix
+    value: m
+  - key: readability-identifier-naming.PrivateMemberCase
+    value: CamelCase
+  - key: readability-identifier-naming.ProtectedMemberPrefix
+    value: m
+  - key: readability-identifier-naming.ProtectedMemberCase
+    value: CamelCase
+  - key: readability-identifier-naming.MemberPrefix  # Default access modifier
+    value: m
+  - key: readability-identifier-naming.MemberCase    # Default access modifier
+    value: CamelCase
+  - key: readability-identifier-naming.ConstantMemberPrefix
+    value: mk
+  - key: readability-identifier-naming.ConstantMemberCase
+    value: CamelCase
+
+  # Methods
+  - key: readability-identifier-naming.MethodCase
+    value: camelBack
+  - key: readability-identifier-naming.VirtualMethodCase
+    value: camelBack
+  - key: readability-identifier-naming.PrivateMethodCase
+    value: camelBack
+  - key: readability-identifier-naming.PublicMethodCase
+    value: camelBack
+  - key: readability-identifier-naming.ProtectedMethodCase
+    value: camelBack
+  - key: readability-identifier-naming.ConstexprMethodCase
+    value: camelBack
+  - key: readability-identifier-naming.ClassMethodCase
+    value: camelBack
+
+  # ================================= Functions ================================
+  # Function Names
+  - key: readability-identifier-naming.FunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.ConstexprFunctionCase
+    value: camelBack
+  - key: readability-identifier-naming.GlobalFunctionCase
+    value: camelBack
+
+  # Parameters
+  - key: readability-identifier-naming.ParameterCase
+    value: camelBack
+  - key: readability-identifier-naming.ConstantParameterPrefix
+    value: k
+  - key: readability-identifier-naming.ConstantParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.PointerParameterCase
+    value: camelBack
+
+  # ================================ Variables =================================
+  - key: readability-identifier-naming.LocalVariableCase
+    value: camelBack
+  - key: readability-identifier-naming.VariableCase
+    value: camelBack
+  - key: readability-identifier-naming.StaticVariablePrefix
+    value: s
+  - key: readability-identifier-naming.StaticVariableCase
+    value: CamelCase
+  - key: readability-identifier-naming.GlobalPointerCase
+    value: camelBack
+  - key: readability-identifier-naming.LocalPointerCase
+    value: camelBack
+  - key: readability-identifier-naming.GlobalVariablePrefix
+    value: g_
+  - key: readability-identifier-naming.GlobalVariableCase
+    value: camelBack
+
+  # ================================ Constants =================================
+  - key: readability-identifier-naming.ConstexprVariableCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.GlobalConstantCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.LocalConstantCase
+    value: CamelCase
+  - key: readability-identifier-naming.LocalConstantPointerCase
+    value: CamelCase
+  # - key: readability-identifier-naming.GlobalConstantPointerPrefix
+  #   value: gk
+  - key: readability-identifier-naming.GlobalConstantPointerCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.StaticConstantCase
+    value: UPPER_CASE
+
+  # =============================== Enumerations ===============================
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumConstantCase
+    value: UPPER_CASE
+
+  # ================================ Namespaces ================================
+  - key: readability-identifier-naming.InlineNamespaceCase
+    value: CamelCase
+  - key: readability-identifier-naming.NamespaceCase
+    value: CamelCase
+
+  # ================================ Templates =================================
+  - key: readability-identifier-naming.ParamterPackCase
+    value: CamelCase
+  - key: readability-identifier-naming.TemplateParameterCase
+    value: UPPER_CASE
+  - key: readability-identifier-naming.TemplateTemplateParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.TypeTemplateParameterCase
+    value: CamelCase
+  - key: readability-identifier-naming.ValueTemplateParameterCase
+    value: lower_case
+
+  # ================================= Aliases ==================================
+  - key: readability-identifier-naming.TypeAliasCase
+    value: CamelCase
+  - key: readability-identifier-naming.TypedefCase
+    value: CamelCase
+
+  # ================================== Macros ==================================
+  - key: MacroDefinitionCase
+    value: UPPER_CASE
+...

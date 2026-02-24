@@ -66,8 +66,6 @@ int main(int argc, char** argv) {
         decorator.build();
     }
 
-    // TODO: Merge a second die onto the base die based on a given interface layer pairs
-
     PDN_INFO("3D Coarse PDN graph built");
     PDN_INFO("Nodes:      %zu", circ.mNodes.size());
     PDN_INFO("MetalRes:   %zu", circ.mMetalResistors.size());

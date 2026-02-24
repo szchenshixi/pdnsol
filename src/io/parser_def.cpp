@@ -83,14 +83,14 @@ static std::vector<std::string> tokenizeDef(const std::string& s) {
 // ConductanceGrid2D implementation
 // -----------------------------------------------------------------------------
 
-void ConductanceGrid2D::init(int nx_, int ny_, double xMin_, double xMax_,
-                             double yMin_, double yMax_) {
-    nx   = nx_;
-    ny   = ny_;
-    xMin = xMin_;
-    yMin = yMin_;
-    dx   = (xMax_ - xMin_) / static_cast<double>(nx);
-    dy   = (yMax_ - yMin_) / static_cast<double>(ny);
+void ConductanceGrid2D::init(int nx, int ny, int xMinDbu, int xMaxDbu,
+                             int yMinDbu, int yMaxDbu) {
+    this->nx      = nx;
+    this->ny      = ny;
+    this->xMinDbu = xMinDbu;
+    this->yMinDbu = yMinDbu;
+    this->dxDbu   = (xMaxDbu - xMinDbu) / nx + 1;
+    this->dyDbu   = (yMaxDbu - yMinDbu) / ny + 1;
     Gx.assign(static_cast<std::size_t>((nx - 1) * ny), 0.0);
     Gy.assign(static_cast<std::size_t>(nx * (ny - 1)), 0.0);
 }
@@ -191,10 +191,12 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
         auto     it    = mGridConfigs.find(lname);
         if (it != mGridConfigs.end()) {
             const GridConfig& c = it->second;
-            mLayerGridRes[l]    = LayerGridResolution{.sx = c.sx, .sy = c.sy};
+            mLayerGridRes[l]    = LayerGridResolution{.sx = FPN::toRep(c.sx),
+                                                      .sy = FPN::toRep(c.sy)};
         } else {
             const GridConfig& c = mGridConfigs.at(DEFAULT);
-            mLayerGridRes[l]    = LayerGridResolution{.sx = c.sx, .sy = c.sy};
+            mLayerGridRes[l]    = LayerGridResolution{.sx = FPN::toRep(c.sx),
+                                                      .sy = FPN::toRep(c.sy)};
         }
 
         if (mLayerGridRes[l].sx <= 0 || mLayerGridRes[l].sy <= 0) {
@@ -202,50 +204,6 @@ CoarsePdnBuilder3D::CoarsePdnBuilder3D(
         }
     }
 }
-
-// CoarsePdnBuilder3D::CoarsePdnBuilder3D(
-//   TechDatabase& techDb, LayerGridResolution defaultRes,
-//   const IdString::Map<LayerGridResolution>& perLayerRes,
-//   const std::vector<std::string>&           powerNetNames,
-//   const std::vector<std::string>&           groundNetNames,
-//   const std::vector<std::string>&           layerOrder)
-//     : mTechDb(techDb)
-//     , mDefaultRes(defaultRes) {
-
-//     // 1) Register PDN nets
-//     for (const std::string& n : powerNetNames) {
-//         addNetIfAbsent(n, /*isPower=*/true, /*isGround=*/false);
-//     }
-//     for (const std::string& n : groundNetNames) {
-//         addNetIfAbsent(n, /*isPower=*/false, /*isGround=*/true);
-//     }
-//     mNumNets = static_cast<int>(mNetByIndex.size());
-
-//     // 2) Register PDN layers and build mapping from layer name to index
-//     mLayerNameToIndex.reserve(layerOrder.size());
-//     mLayerOrder.reserve(layerOrder.size()); // fixed: reserve target size
-//     for (std::size_t i = 0; i < layerOrder.size(); ++i) {
-//         IdString layerId(layerOrder[i]);
-//         mLayerOrder.push_back(layerId);
-//         mLayerNameToIndex[layerId] = static_cast<int>(i);
-//     }
-//     mNumLayers = static_cast<int>(mLayerOrder.size());
-//     // 3) Resolve per-layer grid resolutions (NEW)
-//     mLayerGridRes.resize(static_cast<std::size_t>(mNumLayers));
-//     for (int l = 0; l < mNumLayers; ++l) {
-//         IdString lname = mLayerOrder[l];
-//         auto     it    = perLayerRes.find(lname);
-//         if (it != perLayerRes.end()) {
-//             mLayerGridRes[l] = it->second;
-//         } else {
-//             mLayerGridRes[l] = mDefaultRes;
-//         }
-
-//         if (mLayerGridRes[l].sx <= 0 || mLayerGridRes[l].sy <= 0) {
-//             PDN_FATAL("Invalid grid stride for layer %s", lname.c_str());
-//         }
-//     }
-// }
 
 int CoarsePdnBuilder3D::encodeNetLayer(int netIndex, int layerIndex) const {
     return layerIndex * mNumNets + netIndex;
@@ -365,20 +323,20 @@ bool CoarsePdnBuilder3D::parseDefGeometry(const std::string& defPath) {
 
         // DIEAREA ( x0 y0 ) ( x1 y1 ) ;
         if (!haveDieArea && startsWithIgnoreCase(tline, "DIEAREA")) {
-            int                x0, y0, x1, y1;
+            int                x0Dbu, y0Dbu, x1Dbu, y1Dbu;
             std::string        token;
             std::istringstream iss(tline);
-            iss >> token;    // DIEAREA
-            iss >> token;    // "("
-            iss >> x0 >> y0; // x0 y0
-            iss >> token;    // ")"
-            iss >> token;    // "("
-            iss >> x1 >> y1; // x1 y1
+            iss >> token;          // DIEAREA
+            iss >> token;          // "("
+            iss >> x0Dbu >> y0Dbu; // x0 y0
+            iss >> token;          // ")"
+            iss >> token;          // "("
+            iss >> x1Dbu >> y1Dbu; // x1 y1
             // trailing ) ;
-            mDieXMinUm  = static_cast<double>(x0) / dbu;
-            mDieYMinUm  = static_cast<double>(y0) / dbu;
-            mDieXMaxUm  = static_cast<double>(x1) / dbu;
-            mDieYMaxUm  = static_cast<double>(y1) / dbu;
+            mDieXMinDbu = x0Dbu;
+            mDieYMinDbu = y0Dbu;
+            mDieXMaxDbu = x1Dbu;
+            mDieYMaxDbu = y1Dbu;
             haveDieArea = true;
         }
 
@@ -413,11 +371,10 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
     m2DGrids.assign(mNumNets, std::vector<ConductanceGrid2D>(mNumLayers));
 
     // Calculate die dimensions once
-    double dieWidth  = mDieXMaxUm - mDieXMinUm;
-    double dieHeight = mDieYMaxUm - mDieYMinUm;
+    int dieWidthDbu  = mDieXMaxDbu - mDieXMinDbu;
+    int dieHeightDbu = mDieYMaxDbu - mDieYMinDbu;
 
-    // Step 1: Check if all tile sizes are integer multiples of a common
-    // divisor
+    // 1: Check if all tile sizes are integer multiples of a common divisor
     int commonDivisorX = 0;
     int commonDivisorY = 0;
 
@@ -464,20 +421,20 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
         lcmY = lcm(lcmY, ratioY);
     }
 
-    // Step 3: Calculate base grid dimensions using the common divisor
+    // 3: Calculate base grid dimensions using the common divisor
     // This is the finest grid that can accommodate all tile sizes
-    double baseTileSizeX = commonDivisorX;
-    double baseTileSizeY = commonDivisorY;
+    const int& tileSizeXDbu = commonDivisorX; // Alias
+    const int& tileSizeYDbu = commonDivisorY; // Alias
 
     // Calculate required number of base tiles to cover the die
-    int baseNx = static_cast<int>(std::ceil(dieWidth / baseTileSizeX));
-    int baseNy = static_cast<int>(std::ceil(dieHeight / baseTileSizeY));
+    int baseNx = dieWidthDbu / tileSizeXDbu + 1;
+    int baseNy = dieHeightDbu / tileSizeYDbu + 1;
 
     // Adjust base grid to be a multiple of LCM to ensure integer tile counts
     baseNx = ((baseNx + lcmX - 1) / lcmX) * lcmX;
     baseNy = ((baseNy + lcmY - 1) / lcmY) * lcmY;
 
-    // Step 4: Compute nx/ny for each layer and check/correct for integer
+    // 4: Compute nx/ny for each layer and check/correct for integer
     // multiples
     for (int l = 0; l < mNumLayers; ++l) {
         int ratioX = mLayerGridRes[l].sx / commonDivisorX;
@@ -555,25 +512,27 @@ void CoarsePdnBuilder3D::initInPlaneGrids() {
     }
 
     // Calculate the actual padded die dimensions
-    double paddedDieWidth  = baseNx * baseTileSizeX;
-    double paddedDieHeight = baseNy * baseTileSizeY;
+    double tileSizeXUm    = static_cast<double>(tileSizeXDbu) / mDbuPerMicron;
+    double tileSizeYUm    = static_cast<double>(tileSizeYDbu) / mDbuPerMicron;
+    double dieWidthUm     = static_cast<double>(dieWidthDbu) / mDbuPerMicron;
+    double dieHeightUm    = static_cast<double>(dieHeightDbu) / mDbuPerMicron;
+    double paddedWidthUm  = baseNx * tileSizeXUm;
+    double paddedHeightUm = baseNy * tileSizeYUm;
 
     PDN_INFO("Grid Configuration:");
-    PDN_INFO("  Base tile:    %.2f x %.2fum", baseTileSizeX, baseTileSizeY);
+    PDN_INFO("  Base tile:    %.2f x %.2fum", tileSizeXUm, tileSizeYUm);
     PDN_INFO("  Base grid:    %d x %d tiles", baseNx, baseNy);
-    PDN_INFO("  Original die: %.2f x %.2fum", dieWidth, dieHeight);
-    PDN_INFO("  Padded die:   %.2f x %.2fum", paddedDieWidth, paddedDieHeight);
+    PDN_INFO("  Original die: %.2f x %.2fum", dieWidthUm, dieHeightUm);
+    PDN_INFO("  Padded die:   %.2f x %.2fum", paddedWidthUm, paddedHeightUm);
 
     for (int n = 0; n < mNumNets; ++n) {
         for (int l = 0; l < mNumLayers; ++l) {
             m2DGrids[n][l].init(mLayerGridRes[l].nx,
                                 mLayerGridRes[l].ny,
-                                mDieXMinUm,
-                                //  mDieXMaxUm,
-                                mDieXMinUm + paddedDieWidth,
-                                mDieYMinUm,
-                                //  mDieYMaxUm,
-                                mDieYMinUm + paddedDieHeight);
+                                mDieXMinDbu,
+                                mDieXMinDbu + baseNx * dieWidthDbu,
+                                mDieYMinDbu,
+                                mDieYMinDbu + baseNy * dieHeightDbu);
         }
     }
 }
@@ -670,31 +629,32 @@ bool CoarsePdnBuilder3D::parseDefPoint(const std::vector<std::string>& tokens,
 // widthDbu is the wire width from "ROUTED/NEW" (in DBU).
 void CoarsePdnBuilder3D::recordStripeFromSegment(const std::string& netName,
                                                  const std::string& layerName,
-                                                 int x0, int y0, int x1,
-                                                 int y1, int widthDbu) {
+                                                 int x0Dbu, int y0Dbu,
+                                                 int x1Dbu, int y1Dbu,
+                                                 int widthDbu) {
     if (widthDbu <= 0) return;
 
     const int halfLo = widthDbu / 2;
     const int halfHi = widthDbu - halfLo;
 
-    if (x0 == x1) {
+    if (x0Dbu == x1Dbu) {
         // Vertical stripe
-        int yMin = std::min(y0, y1);
-        int yMax = std::max(y0, y1);
+        int yMin = std::min(y0Dbu, y1Dbu);
+        int yMax = std::max(y0Dbu, y1Dbu);
         recordStripeRectangle(
-          netName, layerName, x0 - halfLo, yMin, x0 + halfHi, yMax);
-    } else if (y0 == y1) {
+          netName, layerName, x0Dbu - halfLo, yMin, x0Dbu + halfHi, yMax);
+    } else if (y0Dbu == y1Dbu) {
         // Horizontal stripe
-        int xMin = std::min(x0, x1);
-        int xMax = std::max(x0, x1);
+        int xMin = std::min(x0Dbu, x1Dbu);
+        int xMax = std::max(x0Dbu, x1Dbu);
         recordStripeRectangle(
-          netName, layerName, xMin, y0 - halfLo, xMax, y0 + halfHi);
+          netName, layerName, xMin, y0Dbu - halfLo, xMax, y0Dbu + halfHi);
     } else {
         // Non-Manhattan (unlikely in PDN); fall back to bounding box
-        int xMin = std::min(x0, x1);
-        int xMax = std::max(x0, x1);
-        int yMin = std::min(y0, y1);
-        int yMax = std::max(y0, y1);
+        int xMin = std::min(x0Dbu, x1Dbu);
+        int xMax = std::max(x0Dbu, x1Dbu);
+        int yMin = std::min(y0Dbu, y1Dbu);
+        int yMax = std::max(y0Dbu, y1Dbu);
         recordStripeRectangle(netName, layerName, xMin, yMin, xMax, yMax);
     }
 }
@@ -746,16 +706,6 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
             continue;
         }
 
-        // VIAS section
-        // if (startsWithIgnoreCase(tline, "VIAS")) {
-        //     section = Section::VIAS;
-        //     continue;
-        // }
-        // if (startsWithIgnoreCase(tline, "END VIAS")) {
-        //     section = Section::NONE;
-        //     continue;
-        // }
-
         // For TSVs
         if (startsWithIgnoreCase(tline, "COMPONENTS")) {
             section = Section::COMPONENTS;
@@ -767,8 +717,7 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
         }
         if (startsWithIgnoreCase(tline, "END COMPONENTS")) {
             section = Section::NONE;
-            if (!currentCompInstName.empty() &&
-                !currentCompMacroName.empty()) {
+            if (!currentCompInstName.empty() && !currentCompMacroName.empty()) {
                 recordTsvInstance(currentCompInstName,
                                   currentCompMacroName,
                                   currentCompX,
@@ -785,8 +734,6 @@ bool CoarsePdnBuilder3D::parseDefPdnAndBumps(const std::string& defPath) {
                                   currentLayerName,
                                   currentRouteWidthDbu);
             break;
-        // case Section::PINS: handlePinsLine(tline); break;
-        // case Section::VIAS: handleViasLine(tline); break;
         case Section::COMPONENTS:
             handleComponentsLine(tline,
                                  currentCompInstName,
@@ -883,9 +830,9 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
             if (!inShapeBlock && i < n && tokens[i] == "(") {
                 // Handle geometry directly without SHAPE keyword
                 // Parse first point
-                int         x0 = 0, y0 = 0;
+                int         x0Dbu = 0, y0Dbu = 0;
                 std::size_t consumed = 0;
-                if (!parseDefPoint(tokens, i, 0, 0, x0, y0, consumed)) {
+                if (!parseDefPoint(tokens, i, 0, 0, x0Dbu, y0Dbu, consumed)) {
                     break;
                 }
                 i += consumed;
@@ -895,35 +842,40 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                     tokens[i] != ";") {
                     // Via instantiation: (x y) viaName
                     const std::string& viaName = tokens[i++];
-                    recordViaInstance(currentNetName, viaName, x0, y0);
+                    recordViaInstance(currentNetName, viaName, x0Dbu, y0Dbu);
                 } else if (i < n && tokens[i] == "(") {
                     // Wire segment: (x0 y0) (x1 y1) ..
-                    int x1 = 0, y1 = 0;
-                    if (!parseDefPoint(tokens, i, x0, y0, x1, y1, consumed)) {
+                    int x1Dbu = 0, y1Dbu = 0;
+                    if (!parseDefPoint(
+                          tokens, i, x0Dbu, y0Dbu, x1Dbu, y1Dbu, consumed)) {
                         break;
                     }
                     i += consumed;
 
-                    if (!currentLayerName.empty() &&
-                        currentRouteWidthDbu > 0) {
+                    if (!currentLayerName.empty() && currentRouteWidthDbu > 0) {
                         recordStripeFromSegment(currentNetName,
                                                 currentLayerName,
-                                                x0,
-                                                y0,
-                                                x1,
-                                                y1,
+                                                x0Dbu,
+                                                y0Dbu,
+                                                x1Dbu,
+                                                y1Dbu,
                                                 currentRouteWidthDbu);
                     }
 
-                    lastX         = x1;
-                    lastY         = y1;
+                    lastX         = x1Dbu;
+                    lastY         = y1Dbu;
                     haveLastPoint = true;
 
                     // Additional segments
                     while (i < n && tokens[i] == "(") {
-                        int x2 = 0, y2 = 0;
-                        if (!parseDefPoint(
-                              tokens, i, lastX, lastY, x2, y2, consumed)) {
+                        int x2Dbu = 0, y2Dbu = 0;
+                        if (!parseDefPoint(tokens,
+                                           i,
+                                           lastX,
+                                           lastY,
+                                           x2Dbu,
+                                           y2Dbu,
+                                           consumed)) {
                             break;
                         }
                         i += consumed;
@@ -934,13 +886,13 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                                                     currentLayerName,
                                                     lastX,
                                                     lastY,
-                                                    x2,
-                                                    y2,
+                                                    x2Dbu,
+                                                    y2Dbu,
                                                     currentRouteWidthDbu);
                         }
 
-                        lastX = x2;
-                        lastY = y2;
+                        lastX = x2Dbu;
+                        lastY = y2Dbu;
                     }
                 }
             }
@@ -962,14 +914,14 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                 }
 
                 // First point
-                int         x0 = 0, y0 = 0;
+                int         x0Dbu = 0, y0Dbu = 0;
                 std::size_t consumed = 0;
                 if (!parseDefPoint(tokens,
                                    i,
                                    haveLastPoint ? lastX : 0,
                                    haveLastPoint ? lastY : 0,
-                                   x0,
-                                   y0,
+                                   x0Dbu,
+                                   y0Dbu,
                                    consumed)) {
                     break;
                 }
@@ -979,40 +931,44 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                 if (i < n && tokens[i] != "(" && tokens[i] != "+" &&
                     tokens[i] != ";") {
                     const std::string& viaName = tokens[i++];
-                    // addViaInstance(currentNetName, viaName, x0, y0);
-                    recordViaInstance(currentNetName, viaName, x0, y0);
+                    recordViaInstance(currentNetName, viaName, x0Dbu, y0Dbu);
                     inShapeBlock = false; // End of shape block
                     continue;
                 }
 
                 // Case 2: wire segments
                 if (i < n && tokens[i] == "(") {
-                    int x1 = 0, y1 = 0;
-                    if (!parseDefPoint(tokens, i, x0, y0, x1, y1, consumed)) {
+                    int x1Dbu = 0, y1Dbu = 0;
+                    if (!parseDefPoint(
+                          tokens, i, x0Dbu, y0Dbu, x1Dbu, y1Dbu, consumed)) {
                         break;
                     }
                     i += consumed;
 
-                    if (!currentLayerName.empty() &&
-                        currentRouteWidthDbu > 0) {
+                    if (!currentLayerName.empty() && currentRouteWidthDbu > 0) {
                         recordStripeFromSegment(currentNetName,
                                                 currentLayerName,
-                                                x0,
-                                                y0,
-                                                x1,
-                                                y1,
+                                                x0Dbu,
+                                                y0Dbu,
+                                                x1Dbu,
+                                                y1Dbu,
                                                 currentRouteWidthDbu);
                     }
 
-                    lastX         = x1;
-                    lastY         = y1;
+                    lastX         = x1Dbu;
+                    lastY         = y1Dbu;
                     haveLastPoint = true;
 
                     // Additional segments
                     while (i < n && tokens[i] == "(") {
-                        int x2 = 0, y2 = 0;
-                        if (!parseDefPoint(
-                              tokens, i, lastX, lastY, x2, y2, consumed)) {
+                        int x2Dbu = 0, y2Dbu = 0;
+                        if (!parseDefPoint(tokens,
+                                           i,
+                                           lastX,
+                                           lastY,
+                                           x2Dbu,
+                                           y2Dbu,
+                                           consumed)) {
                             break;
                         }
                         i += consumed;
@@ -1023,13 +979,13 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
                                                     currentLayerName,
                                                     lastX,
                                                     lastY,
-                                                    x2,
-                                                    y2,
+                                                    x2Dbu,
+                                                    y2Dbu,
                                                     currentRouteWidthDbu);
                         }
 
-                        lastX = x2;
-                        lastY = y2;
+                        lastX = x2Dbu;
+                        lastY = y2Dbu;
                     }
                 }
 
@@ -1055,101 +1011,6 @@ void CoarsePdnBuilder3D::handleSpecialNetsLine(const std::string& line,
         ++i;
     }
 }
-
-// void CoarsePdnBuilder3D::handleViasLine(const std::string& line) {
-//     std::vector<std::string> tokens = tokenizeDef(line);
-//     if (tokens.empty()) return;
-
-//     // We only care about lines that start a via definition:
-//     //   - via4_1600x1600 + VIARULE ... + CUTSIZE ... + LAYERS ..
-//     if (tokens[0] != "-" || tokens.size() < 2) {
-//         return;
-//     }
-
-//     std::string viaName = stripDefQuotes(tokens[1]);
-
-//     std::string viaRuleName;
-//     std::string bottomLayer;
-//     std::string cutLayer;
-//     std::string topLayer;
-
-//     int cutSizeX         = 0;
-//     int cutSizeY         = 0;
-//     int cutSpacingX      = 0;
-//     int cutSpacingY      = 0;
-//     int enclosureBottomX = 0;
-//     int enclosureBottomY = 0;
-//     int enclosureTopX    = 0;
-//     int enclosureTopY    = 0;
-//     int rows             = 1;
-//     int cols             = 1;
-
-//     std::size_t       i = 2;
-//     const std::size_t n = tokens.size();
-
-//     while (i < n) {
-//         const std::string& tok = tokens[i];
-
-//         if (tok == "+") {
-//             ++i;
-//             continue;
-//         }
-//         if (tok == ";") {
-//             break;
-//         }
-
-//         if (tok == "VIARULE" && i + 1 < n) {
-//             viaRuleName = stripDefQuotes(tokens[i + 1]);
-//             i += 2;
-//         } else if (tok == "CUTSIZE" && i + 2 < n) {
-//             parseIntSafe(tokens[i + 1], cutSizeX);
-//             parseIntSafe(tokens[i + 2], cutSizeY);
-//             i += 3;
-//         } else if (tok == "LAYERS" && i + 3 < n) {
-//             bottomLayer = stripDefQuotes(tokens[i + 1]);
-//             cutLayer    = stripDefQuotes(tokens[i + 2]);
-//             topLayer    = stripDefQuotes(tokens[i + 3]);
-//             i += 4;
-//         } else if (tok == "CUTSPACING" && i + 2 < n) {
-//             parseIntSafe(tokens[i + 1], cutSpacingX);
-//             parseIntSafe(tokens[i + 2], cutSpacingY);
-//             i += 3;
-//         } else if (tok == "ENCLOSURE" && i + 4 < n) {
-//             // DEF syntax: ENCLOSURE <botX> <botY> <topX> <topY>
-//             parseIntSafe(tokens[i + 1], enclosureBottomX);
-//             parseIntSafe(tokens[i + 2], enclosureBottomY);
-//             parseIntSafe(tokens[i + 3], enclosureTopX);
-//             parseIntSafe(tokens[i + 4], enclosureTopY);
-//             i += 5;
-//         } else if (tok == "ROWCOL" && i + 2 < n) {
-//             parseIntSafe(tokens[i + 1], rows);
-//             parseIntSafe(tokens[i + 2], cols);
-//             i += 3;
-//         } else {
-//             // Ignore other keywords we don't need for coarse modeling
-//             ++i;
-//         }
-//     }
-
-//     // Register via geometry in TechDatabase if we have basic connectivity
-//     if (!bottomLayer.empty() && !topLayer.empty()) {
-//         mTechDb.addViaGeometryFromDef(viaName,
-//                                       viaRuleName,
-//                                       bottomLayer,
-//                                       cutLayer,
-//                                       topLayer,
-//                                       cutSizeX,
-//                                       cutSizeY,
-//                                       cutSpacingX,
-//                                       cutSpacingY,
-//                                       enclosureBottomX,
-//                                       enclosureBottomY,
-//                                       enclosureTopX,
-//                                       enclosureTopY,
-//                                       rows,
-//                                       cols);
-//     }
-// }
 
 // For example:
 // - U_TSV_PG_Power1_VDD_PERI_MEDIA1_0 TSV_PG_POWER1
@@ -1216,23 +1077,21 @@ void CoarsePdnBuilder3D::handleComponentsLine(const std::string& line,
 // Representative coordinate helpers
 // -----------------------------------------------------------------------------
 
-static int representativeRow(const ConductanceGrid2D& grid, double y0,
-                             double y1) {
-    const int    ny   = grid.ny;
-    const double dy   = grid.dy;
-    double       yMid = (y0 + y1) / 2;
-    int          jMid =
-      clamp(static_cast<int>(std::floor((yMid - grid.yMin) / dy)), 0, ny - 1);
+static int representativeRow(const ConductanceGrid2D& grid, int y0Dbu,
+                             int y1Dbu) {
+    const int ny    = grid.ny;
+    const int dyDbu = grid.dyDbu;
+    int       yMid  = (y0Dbu + y1Dbu) / 2;
+    int       jMid  = clamp(yMid / dyDbu, 0, ny - 1);
     return jMid;
 }
 
-static int representativeCol(const ConductanceGrid2D& grid, double x0,
-                             double x1) {
-    const int    nx   = grid.nx;
-    const double dx   = grid.dx;
-    double       xMid = (x0 + x1) / 2;
-    int          iMid =
-      clamp(static_cast<int>(std::floor((xMid - grid.xMin) / dx)), 0, nx - 1);
+static int representativeCol(const ConductanceGrid2D& grid, int x0Dbu,
+                             int x1Dbu) {
+    const int nx    = grid.nx;
+    const int dxDbu = grid.dxDbu;
+    int       xMid  = (x0Dbu + x1Dbu) / 2;
+    int       iMid  = clamp(xMid / dxDbu, 0, nx - 1);
     return iMid;
 }
 
@@ -1241,8 +1100,8 @@ static int representativeCol(const ConductanceGrid2D& grid, double x0,
 // -----------------------------------------------------------------------------
 
 void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
-                                           const std::string& viaName,
-                                           int xDbu, int yDbu) {
+                                           const std::string& viaName, int xDbu,
+                                           int yDbu) {
     auto netIt = mNetByName.find(IdString(netName));
     if (netIt == mNetByName.end()) {
         mMissingNets.insert(IdString(netName));
@@ -1271,8 +1130,8 @@ void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
 
     ViaRec v;
     v.netIndex = netIndex;
-    v.x        = xDbu;
-    v.y        = yDbu;
+    v.xDbu     = xDbu;
+    v.yDbu     = yDbu;
     v.viaName  = IdString::tryLookup(viaName);
     v.lb       = lb;
     v.lt       = lt;
@@ -1282,91 +1141,185 @@ void CoarsePdnBuilder3D::recordViaInstance(const std::string& netName,
 }
 
 void CoarsePdnBuilder3D::accumulateHorizontalStripe(
-  ConductanceGrid2D& grid, const MetalLayerConfig& layer, double x0, double y0,
-  double x1, double y1) {
-    double stripeWidth = y1 - y0; // µm
-    if (stripeWidth <= 0.0) return;
+  ConductanceGrid2D& grid, const MetalLayerConfig& layer, int x0Dbu, int y0Dbu,
+  int x1Dbu, int y1Dbu) {
+    double stripeWidthUm = static_cast<double>(y1Dbu - y0Dbu) / mDbuPerMicron;
+    if (stripeWidthUm <= 0.0) return;
 
     // Ohm/µm
-    double RL = layer.resistivity / (layer.thickness * stripeWidth + 1e-30);
+    double RL = layer.resistivity / (layer.thickness * stripeWidthUm + 1e-30);
 
-    const int    nx = grid.nx;
-    const int    ny = grid.ny;
-    const double dx = grid.dx;
-    const double dy = grid.dy;
+    const int nx    = grid.nx;
+    const int dxDbu = grid.dxDbu;
+    if (nx < 2 || dxDbu <= 0) return;
 
-    // Rows [jStart..jEnd] where band intersects [y0,y1]
-    // int jStart =
-    //   clamp(static_cast<int>(std::floor((y0 - grid.yMin) / dy)), 0, ny -
-    //   1);
-    // int jEnd =
-    //   clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 0, ny -
-    //   1);
+    // Heuristic length threshold used in the original code (dx/16)
+    const int tipThreshDbu = std::max(1, dxDbu / 16);
+
+    // Clip stripe to grid's X extent
+    const int xMinDbu = grid.xMinDbu;
+    const int xMaxDbu = xMinDbu + nx * dxDbu;
+
+    x0Dbu = std::max(x0Dbu, xMinDbu);
+    x1Dbu = std::min(x1Dbu, xMaxDbu);
+    if (x1Dbu <= x0Dbu) return;
+
+    // ---------------------------
+    // Purge tiny head/tail tips
+    // ---------------------------
+
+    // Head trim: if overlap in the first tile is tiny AND the stripe continues
+    // into the next tile, snap x0 to the next vertical tile boundary
+    {
+        // tile index, 0..nx-1
+        const int i0             = (x0Dbu - xMinDbu) / dxDbu;
+        const int xRightBoundary = xMinDbu + (i0 + 1) * dxDbu;
+
+        const int headOverlap = std::min(x1Dbu, xRightBoundary) - x0Dbu;
+
+        // Only trim if the stripe actually crosses into the next tile
+        if (x1Dbu > xRightBoundary && headOverlap > 0 &&
+            headOverlap < tipThreshDbu) {
+            x0Dbu = xRightBoundary;
+        }
+    }
+    if (x1Dbu <= x0Dbu) return;
+
+    // Tail trim: if overlap in the last tile is tiny AND the stripe came from
+    // a previous tile, snap x1 to the previous vertical tile boundary.
+    {
+        const int x1m1 = x1Dbu - 1; // make the end exclusive for tile-indexing
+        const int i1   = (x1m1 - xMinDbu) / dxDbu; // 0..nx-1
+        const int xLeftBoundary = xMinDbu + i1 * dxDbu;
+
+        const int tailOverlap = x1Dbu - std::max(x0Dbu, xLeftBoundary);
+
+        // Trim if the stripe actually extends into this last tile from the left
+        if (x0Dbu < xLeftBoundary && tailOverlap > 0 &&
+            tailOverlap < tipThreshDbu) {
+            x1Dbu = xLeftBoundary;
+        }
+    }
+    if (x1Dbu <= x0Dbu) return;
+
+    // Skip short wires (after trimming)
+    if (x1Dbu - x0Dbu < tipThreshDbu) return;
+
     // Representative row
-    int iy = representativeRow(grid, y0, y1);
+    int iy = representativeRow(grid, y0Dbu, y1Dbu);
 
-    // Vertical boundaries [kStart..kEnd] where xMin + k*dx in [x0,x1], 1
-    // <= k <= nx-1
-    int kStart =
-      clamp(static_cast<int>(std::ceil((x0 - grid.xMin) / dx)), 1, nx - 1);
-    int kEnd =
-      clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 1, nx - 1);
+    // Determine internal vertical boundaries strictly inside (x0, x1).
+    //
+    // Boundary k is at x = xMin + k*dx, k=1..nx-1.
+    // We want x0 < boundary < x1 (open interval),
+    // so boundaries exactly at x0 or x1 are excluded.
+    int kStart = (x0Dbu - xMinDbu) / dxDbu + 1; // first boundary > x0
+    int kEnd   = (x1Dbu - 1 - xMinDbu) / dxDbu; // last boundary < x1
 
-    // if (jEnd < jStart || kEnd < kStart) return;
+    // Intersect with valid internal boundary index range [1..nx-1]
+    kStart = std::max(kStart, 1);
+    kEnd   = std::min(kEnd, nx - 1);
+
     if (kEnd < kStart) return;
 
-    double segmentLength = dx;
+    double segmentLength = dxDbu;
     double G_perSegment  = 1.0 / (RL * segmentLength); // Siemens
 
-    // for (int j = jStart; j <= jEnd; ++j) {
     for (int k = kStart; k <= kEnd; ++k) {
         int ix = k - 1;
         grid.gx(ix, iy) += G_perSegment;
     }
-    // }
 }
 
-void CoarsePdnBuilder3D::accumulateVerticalStripe(
-  ConductanceGrid2D& grid, const MetalLayerConfig& layer, double x0, double y0,
-  double x1, double y1) {
-    double stripeWidth = x1 - x0; // µm
-    if (stripeWidth <= 0.0) return;
+void CoarsePdnBuilder3D::accumulateVerticalStripe(ConductanceGrid2D&      grid,
+                                                  const MetalLayerConfig& layer,
+                                                  int x0Dbu, int y0Dbu,
+                                                  int x1Dbu, int y1Dbu) {
+    double stripeWidthUm = static_cast<double>(x1Dbu - x0Dbu) / mDbuPerMicron;
+    if (stripeWidthUm <= 0.0) return;
 
-    double RL =
-      layer.resistivity / (layer.thickness * stripeWidth + 1e-30); // Ohm/µm
+    // Ohm/µm
+    double RL = layer.resistivity / (layer.thickness * stripeWidthUm + 1e-30);
 
-    const int    nx = grid.nx;
-    const int    ny = grid.ny;
-    const double dx = grid.dx;
-    const double dy = grid.dy;
+    const int ny    = grid.ny;
+    const int dyDbu = grid.dyDbu;
+    if (ny < 2 || dyDbu <= 0) return;
 
-    // Columns [iStart..iEnd]
-    // int iStart =
-    //   clamp(static_cast<int>(std::floor((x0 - grid.xMin) / dx)), 0, nx -
-    //   1);
-    // int iEnd =
-    //   clamp(static_cast<int>(std::floor((x1 - grid.xMin) / dx)), 0, nx -
-    //   1);
-    int ix = representativeCol(grid, x0, x1);
+    // Heuristic length threshold used in the original code (dx/16)
+    const int tipThreshDbu = std::max(1, dyDbu / 16);
 
-    // Horizontal boundaries [lStart..lEnd], 1 <= l <= ny-1
-    int lStart =
-      clamp(static_cast<int>(std::ceil((y0 - grid.yMin) / dy)), 1, ny - 1);
-    int lEnd =
-      clamp(static_cast<int>(std::floor((y1 - grid.yMin) / dy)), 1, ny - 1);
+    // Clip stripe to grid's Y extent
+    const int yMinDbu = grid.yMinDbu;
+    const int yMaxDbu = yMinDbu + ny * dyDbu;
 
-    // if (iEnd < iStart || lEnd < lStart) return;
+    y0Dbu = std::max(y0Dbu, yMinDbu);
+    y1Dbu = std::min(y1Dbu, yMaxDbu);
+    if (y1Dbu <= y0Dbu) return;
+
+    // ---------------------------
+    // Purge tiny head/tail tips
+    // ---------------------------
+
+    // Head trim: if overlap in the first tile is tiny AND the stripe continues
+    // into the next tile, snap y0 to the next horizontal tile boundary
+    {
+        // tile index, 0..ny-1
+        const int i0           = (y0Dbu - yMinDbu) / dyDbu;
+        const int yTopBoundary = yMinDbu + (i0 + 1) * dyDbu;
+
+        const int headOverlap = std::min(y1Dbu, yTopBoundary) - y0Dbu;
+
+        // Only trim if the stripe actually crosses into the next tile
+        if (y1Dbu > yTopBoundary && headOverlap > 0 &&
+            headOverlap < tipThreshDbu) {
+            y0Dbu = yTopBoundary;
+        }
+    }
+    if (y1Dbu <= y0Dbu) return;
+
+    // Tail trim: if overlap in the last tile is tiny AND the stripe came from
+    // a previous tile, snap y1 to the previous horizontal tile boundary.
+    {
+        const int y1m1 = y1Dbu - 1; // make the end exclusive for tile-indexing
+        const int i1   = (y1m1 - yMinDbu) / dyDbu; // 0..ny-1
+        const int yBottomBoundary = yMinDbu + i1 * dyDbu;
+
+        const int tailOverlap = y1Dbu - std::max(y0Dbu, yBottomBoundary);
+
+        // Trim if the stripe actually extends into this last tile from the left
+        if (x0Dbu < yBottomBoundary && tailOverlap > 0 &&
+            tailOverlap < tipThreshDbu) {
+            x1Dbu = yBottomBoundary;
+        }
+    }
+    if (x1Dbu <= x0Dbu) return;
+
+    // Skip short wires (after trimming)
+    if (y1Dbu - y0Dbu < tipThreshDbu) return;
+
+    int ix = representativeCol(grid, x0Dbu, x1Dbu);
+
+    // Determine internal vertical boundaries strictly inside (y0, y1).
+    //
+    // Boundary l is at y = yMin + l*dy, l=1..ny-1.
+    // We want y0 < boundary < y1 (open interval),
+    // so boundaries exactly at y0 or y1 are excluded.
+    int lStart = (y0Dbu - yMinDbu) / dyDbu + 1; // first boundary > y0
+    int lEnd   = (y1Dbu - 1 - yMinDbu) / dyDbu; // last boundary < y1
+
+    // Intersect with valid internal boundary index range [1..ny-1]
+    lStart = std::max(lStart, 1);
+    lEnd   = std::min(lEnd, ny - 1);
+
     if (lEnd < lStart) return;
 
-    double segmentLength = dy;
+    double segmentLength = dyDbu;
     double G_perSegment  = 1.0 / (RL * segmentLength); // Siemens
 
-    // for (int i = iStart; i <= iEnd; ++i) {
     for (int l = lStart; l <= lEnd; ++l) {
         int iy = l - 1;
         grid.gy(ix, iy) += G_perSegment;
     }
-    // }
 }
 
 // -----------------------------------------------------------------------------
@@ -1396,10 +1349,10 @@ void CoarsePdnBuilder3D::recordStripeRectangle(const std::string& netName,
     StripeRec s;
     s.netIndex   = netIndex;
     s.layerIndex = layerIndex;
-    s.x0         = x0;
-    s.y0         = y0;
-    s.x1         = x1;
-    s.y1         = y1;
+    s.x0Dbu      = x0;
+    s.y0Dbu      = y0;
+    s.x1Dbu      = x1;
+    s.y1Dbu      = y1;
 
     mRecordedStripes.push_back(s);
 }
@@ -1511,8 +1464,8 @@ void CoarsePdnBuilder3D::recordTsvInstance(const std::string& instName,
 
     TsvRec t;
     t.netIndex = netIndex;
-    t.x        = xDbu;
-    t.y        = yDbu;
+    t.xDbu     = xDbu;
+    t.yDbu     = yDbu;
     t.tsvName  = IdString(macroName); // stored only for debugging/metadata
     t.lb       = lb;
     t.lt       = lt;
@@ -1613,10 +1566,14 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
     auto tileIndexOfPoint = [&](const ConductanceGrid2D& g,
                                 double                   x_um,
                                 double y_um) -> std::pair<int, int> {
-        const int ix = clamp(
-          static_cast<int>(std::floor((x_um - g.xMin) / g.dx)), 0, g.nx - 1);
-        const int iy = clamp(
-          static_cast<int>(std::floor((y_um - g.yMin) / g.dy)), 0, g.ny - 1);
+        const int ix =
+          clamp(static_cast<int>(std::floor((x_um - g.xMinDbu) / g.dxDbu)),
+                0,
+                g.nx - 1);
+        const int iy =
+          clamp(static_cast<int>(std::floor((y_um - g.yMinDbu) / g.dyDbu)),
+                0,
+                g.ny - 1);
         return {ix, iy};
     };
 
@@ -1628,20 +1585,33 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
 
         const ConductanceGrid2D& g = m2DGrids[s.netIndex][s.layerIndex];
 
-        const double x0_um = static_cast<double>(s.x0) / mDbuPerMicron;
-        const double y0_um = static_cast<double>(s.y0) / mDbuPerMicron;
-        const double x1_um = static_cast<double>(s.x1) / mDbuPerMicron;
-        const double y1_um = static_cast<double>(s.y1) / mDbuPerMicron;
+        const double x0_um = static_cast<double>(s.x0Dbu) / mDbuPerMicron;
+        const double y0_um = static_cast<double>(s.y0Dbu) / mDbuPerMicron;
+        const double x1_um = static_cast<double>(s.x1Dbu) / mDbuPerMicron;
+        const double y1_um = static_cast<double>(s.y1Dbu) / mDbuPerMicron;
+
+        // const int x0Dbu = s.x0;
+        // const int y0Dbu = s.y0;
+        // const int x1Dbu = s.x1;
+        // const int y1Dbu = s.y1;
 
         // Convert stripe bbox to a tile index range (inclusive)
-        const int ix0 = clamp(
-          static_cast<int>(std::floor((x0_um - g.xMin) / g.dx)), 0, g.nx - 1);
-        const int ix1 = clamp(
-          static_cast<int>(std::floor((x1_um - g.xMin) / g.dx)), 0, g.nx - 1);
-        const int iy0 = clamp(
-          static_cast<int>(std::floor((y0_um - g.yMin) / g.dy)), 0, g.ny - 1);
-        const int iy1 = clamp(
-          static_cast<int>(std::floor((y1_um - g.yMin) / g.dy)), 0, g.ny - 1);
+        const int ix0 =
+          clamp(static_cast<int>(std::floor((x0_um - g.xMinDbu) / g.dxDbu)),
+                0,
+                g.nx - 1);
+        const int ix1 =
+          clamp(static_cast<int>(std::floor((x1_um - g.xMinDbu) / g.dxDbu)),
+                0,
+                g.nx - 1);
+        const int iy0 =
+          clamp(static_cast<int>(std::floor((y0_um - g.yMinDbu) / g.dyDbu)),
+                0,
+                g.ny - 1);
+        const int iy1 =
+          clamp(static_cast<int>(std::floor((y1_um - g.yMinDbu) / g.dyDbu)),
+                0,
+                g.ny - 1);
 
         for (int iy = iy0; iy <= iy1; ++iy) {
             for (int ix = ix0; ix <= ix1; ++ix) {
@@ -1664,25 +1634,20 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         if (layerIt == mDieConfig.tech.metalLayers.end()) continue;
         const auto& layer = layerIt->second;
 
-        // Convert to µm
-        double x0 = static_cast<double>(s.x0) / mDbuPerMicron;
-        double y0 = static_cast<double>(s.y0) / mDbuPerMicron;
-        double x1 = static_cast<double>(s.x1) / mDbuPerMicron;
-        double y1 = static_cast<double>(s.y1) / mDbuPerMicron;
+        int x0Dbu = s.x0Dbu;
+        int y0Dbu = s.y0Dbu;
+        int x1Dbu = s.x1Dbu;
+        int y1Dbu = s.y1Dbu;
 
-        if (x1 < x0) std::swap(x0, x1);
-        if (y1 < y0) std::swap(y0, y1);
-
-        const double wX = x1 - x0;
-        const double wY = y1 - y0;
-        if (wX <= 0.0 || wY <= 0.0) continue;
+        if (x1Dbu < x0Dbu) std::swap(x0Dbu, x1Dbu);
+        if (y1Dbu < y0Dbu) std::swap(y0Dbu, y1Dbu);
 
         ConductanceGrid2D& grid         = m2DGrids[s.netIndex][s.layerIndex];
-        const bool         isHorizontal = (wX >= wY);
+        const bool         isHorizontal = (x1Dbu - x0Dbu >= y1Dbu - y0Dbu);
         if (isHorizontal) {
-            accumulateHorizontalStripe(grid, layer, x0, y0, x1, y1);
+            accumulateHorizontalStripe(grid, layer, x0Dbu, y0Dbu, x1Dbu, y1Dbu);
         } else {
-            accumulateVerticalStripe(grid, layer, x0, y0, x1, y1);
+            accumulateVerticalStripe(grid, layer, x0Dbu, y0Dbu, x1Dbu, y1Dbu);
         }
     }
 
@@ -1725,13 +1690,13 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
             // (Should already match net/layer, but keep defensive)
             if (s.netIndex != netIndex || s.layerIndex != layerIndex) continue;
 
-            if (xDbu < s.x0 - tolDbu || xDbu > s.x1 + tolDbu ||
-                yDbu < s.y0 - tolDbu || yDbu > s.y1 + tolDbu) {
+            if (xDbu < s.x0Dbu - tolDbu || xDbu > s.x1Dbu + tolDbu ||
+                yDbu < s.y0Dbu - tolDbu || yDbu > s.y1Dbu + tolDbu) {
                 continue;
             }
 
-            const long long dx           = static_cast<long long>(s.x1) - s.x0;
-            const long long dy           = static_cast<long long>(s.y1) - s.y0;
+            const long long dx = static_cast<long long>(s.x1Dbu) - s.x0Dbu;
+            const long long dy = static_cast<long long>(s.y1Dbu) - s.y0Dbu;
             const bool      isHorizontal = (dx >= dy);
 
             if (isHorizontal) {
@@ -1739,7 +1704,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
                 // "2*DBU" units
                 const long long dist =
                   std::llabs(2LL * static_cast<long long>(yDbu) -
-                             (static_cast<long long>(s.y0) + s.y1));
+                             (static_cast<long long>(s.y0Dbu) + s.y1Dbu));
                 const long long width = dy;
 
                 if (dist < bestHDist ||
@@ -1752,7 +1717,7 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
                 // distance to vertical stripe centerline in x
                 const long long dist =
                   std::llabs(2LL * static_cast<long long>(xDbu) -
-                             (static_cast<long long>(s.x0) + s.x1));
+                             (static_cast<long long>(s.x0Dbu) + s.x1Dbu));
                 const long long width = dx;
 
                 if (dist < bestVDist ||
@@ -1771,8 +1736,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         if (bestH >= 0) {
             const StripeRec& s =
               mRecordedStripes[static_cast<std::size_t>(bestH)];
-            const double y0_um = static_cast<double>(s.y0) / mDbuPerMicron;
-            const double y1_um = static_cast<double>(s.y1) / mDbuPerMicron;
+            const double y0_um = static_cast<double>(s.y0Dbu) / mDbuPerMicron;
+            const double y1_um = static_cast<double>(s.y1Dbu) / mDbuPerMicron;
             iy                 = representativeRow(g, y0_um, y1_um);
         }
 
@@ -1780,8 +1745,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         if (bestV >= 0) {
             const StripeRec& s =
               mRecordedStripes[static_cast<std::size_t>(bestV)];
-            const double x0_um = static_cast<double>(s.x0) / mDbuPerMicron;
-            const double x1_um = static_cast<double>(s.x1) / mDbuPerMicron;
+            const double x0_um = static_cast<double>(s.x0Dbu) / mDbuPerMicron;
+            const double x1_um = static_cast<double>(s.x1Dbu) / mDbuPerMicron;
             ix                 = representativeCol(g, x0_um, x1_um);
         }
 
@@ -1794,8 +1759,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         if (v.lt < 0 || v.lt >= mNumLayers) continue;
         if (v.g <= 0.0) continue;
 
-        auto [ixB, iyB] = allocateEndpoint(v.netIndex, v.lb, v.x, v.y);
-        auto [ixT, iyT] = allocateEndpoint(v.netIndex, v.lt, v.x, v.y);
+        auto [ixB, iyB] = allocateEndpoint(v.netIndex, v.lb, v.xDbu, v.yDbu);
+        auto [ixT, iyT] = allocateEndpoint(v.netIndex, v.lt, v.xDbu, v.yDbu);
 
         ConductanceGrid3D& vg = getOrCreateViaGrid(v.netIndex, v.lb, v.lt);
         vg.addConductance(ixB, iyB, ixT, iyT, v.g);
@@ -1807,8 +1772,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
         if (t.lt < 0 || t.lt >= mNumLayers) continue;
         if (t.g <= 0.0) continue;
 
-        auto [ixB, iyB] = allocateEndpoint(t.netIndex, t.lb, t.x, t.y);
-        auto [ixT, iyT] = allocateEndpoint(t.netIndex, t.lt, t.x, t.y);
+        auto [ixB, iyB] = allocateEndpoint(t.netIndex, t.lb, t.xDbu, t.yDbu);
+        auto [ixT, iyT] = allocateEndpoint(t.netIndex, t.lt, t.xDbu, t.yDbu);
 
         ConductanceGrid3D& tg = getOrCreateTsvGrid(t.netIndex, t.lb, t.lt);
         tg.addConductance(ixB, iyB, ixT, iyT, t.g);
@@ -1820,8 +1785,8 @@ void CoarsePdnBuilder3D::finalizeRecordedPdnGeometry() {
     mRecordedTsvs.clear();
 }
 
-void CoarsePdnBuilder3D::buildCircuitGraph(
-  CircuitGraph& graph, const std::vector<int>& netIndices) {
+void CoarsePdnBuilder3D::buildCircuitGraph(CircuitGraph&           graph,
+                                           const std::vector<int>& netIndices) {
     graph.mCoordinateUnit = CircuitGraph::UM;
 
     if (netIndices.empty()) {
@@ -1837,8 +1802,7 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
     for (int n : netIndices) {
         if (n < 0 || n >= mNumNets) continue;
         if (netToLocal[static_cast<std::size_t>(n)] >= 0) continue; // dedup
-        netToLocal[static_cast<std::size_t>(n)] =
-          static_cast<int>(nets.size());
+        netToLocal[static_cast<std::size_t>(n)] = static_cast<int>(nets.size());
         nets.push_back(n);
     }
 
@@ -1851,16 +1815,15 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
         tileNodeIds[ln].resize(static_cast<std::size_t>(mNumLayers));
         for (int l = 0; l < mNumLayers; ++l) {
             const ConductanceGrid2D& grid = m2DGrids[netIndex][l];
-            tileNodeIds[ln][static_cast<std::size_t>(l)].init(grid.nx,
-                                                              grid.ny);
+            tileNodeIds[ln][static_cast<std::size_t>(l)].init(grid.nx, grid.ny);
         }
     }
 
     // Register nets per layer and store the resulting NetId
     std::vector<std::vector<NetId>> netLayerIds;
-    netLayerIds.resize(static_cast<std::size_t>(nets.size()),
-                       std::vector<NetId>(static_cast<std::size_t>(mNumLayers),
-                                          NetId::Invalid));
+    netLayerIds.resize(
+      static_cast<std::size_t>(nets.size()),
+      std::vector<NetId>(static_cast<std::size_t>(mNumLayers), NetId::Invalid));
 
     for (int l = 0; l < mNumLayers; ++l) {
         IdString layerName = mLayerOrder[l];
@@ -1888,8 +1851,8 @@ void CoarsePdnBuilder3D::buildCircuitGraph(
             // 1.a) Create tile nodes
             for (int iy = 0; iy < ny; ++iy) {
                 for (int ix = 0; ix < nx; ++ix) {
-                    double xCenterUm = grid.xMin + (ix + 0.5) * grid.dx;
-                    double yCenterUm = grid.yMin + (iy + 0.5) * grid.dy;
+                    double xCenterUm = grid.xMinDbu + (ix + 0.5) * grid.dxDbu;
+                    double yCenterUm = grid.yMinDbu + (iy + 0.5) * grid.dyDbu;
 
                     std::ostringstream ossName;
                     ossName << ni.name.str() << "_" << layerName.str() << "_T_"

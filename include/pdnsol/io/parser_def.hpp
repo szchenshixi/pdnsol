@@ -34,12 +34,12 @@ struct SpecialNetRouteState {
 // -----------------------------------------------------------------------------
 
 struct ConductanceGrid2D {
-    int    nx   = 0;
-    int    ny   = 0;
-    double xMin = 0.0;
-    double yMin = 0.0;
-    double dx   = 1.0;
-    double dy   = 1.0;
+    int nx      = 0;
+    int ny      = 0;
+    int xMinDbu = 0.0;
+    int yMinDbu = 0.0;
+    int dxDbu   = 1.0;
+    int dyDbu   = 1.0;
 
     // Gx[ix,iy] : conductance between (ix,iy) and (ix+1,iy),
     // ix in [0..nx-2], iy in [0..ny-1]
@@ -48,8 +48,7 @@ struct ConductanceGrid2D {
     std::vector<double> Gx;
     std::vector<double> Gy;
 
-    void init(int nx_, int ny_, double xMin_, double xMax_, double yMin_,
-              double yMax_);
+    void init(int nx_, int ny_, int xMin_, int xMax_, int yMin_, int yMax_);
 
     inline double&       gx(int ix, int iy);
     inline double&       gy(int ix, int iy);
@@ -111,10 +110,10 @@ struct NetInfo {
 };
 
 struct LayerGridResolution {
-    int sx = -1; // Tile size in X direction (um)
-    int sy = -1; // Tile size in Y direction (um)
-    int nx = -1; // Computed tile count in X direction
-    int ny = -1; // Computed tile count in Y direction
+    Tick sx = -1; // Tile size in X direction
+    Tick sy = -1; // Tile size in Y direction
+    int  nx = -1; // Computed tile count in X direction
+    int  ny = -1; // Computed tile count in Y direction
 };
 
 // -----------------------------------------------------------------------------
@@ -124,13 +123,13 @@ struct LayerGridResolution {
 struct StripeRec {
     int netIndex   = -1;
     int layerIndex = -1;
-    int x0 = 0, y0 = 0; // normalized DBU
-    int x1 = 0, y1 = 0; // x0<=x1, y0<=y1
+    int x0Dbu = 0, y0Dbu = 0; // normalized DBU
+    int x1Dbu = 0, y1Dbu = 0; // x0<=x1, y0<=y1
 };
 
 struct ViaRec {
     int      netIndex = -1;
-    int      x = 0, y = 0; // DBU
+    int      xDbu = 0, yDbu = 0; // DBU
     IdString viaName;
 
     int lb = -1; // bottom layer idx (resolved from tech via)
@@ -141,7 +140,7 @@ struct ViaRec {
 
 struct TsvRec {
     int      netIndex = -1;
-    int      x = 0, y = 0; // DBU
+    int      xDbu = 0, yDbu = 0; // DBU
     IdString tsvName;
 
     int lb = -1; // bottom layer idx (resolved from tech via)
@@ -191,8 +190,7 @@ class CoarsePdnBuilder3D {
 
     // Build combined graph but only for nets passing `filter`
     bool buildCoarsePdnFromDef(const std::string& defPath,
-                               CircuitGraph&      outGraph,
-                               const NetFilter&   filter);
+                               CircuitGraph& outGraph, const NetFilter& filter);
 
     // Build one CircuitGraph per selected net (net name -> graph)
     bool
@@ -232,14 +230,14 @@ class CoarsePdnBuilder3D {
     // Supports '*' meaning "same as previous value" on that axis
     static bool parseDefPoint(const std::vector<std::string>& tokens,
                               std::size_t startIdx, int prevX, int prevY,
-                              int& x, int& y, std::size_t& consumed);
+                              int& xDbu, int& yDbu, std::size_t& consumed);
 
     // Convert a routed segment into a rectangle and feed it into the existing
     // rectangle-based PDN builder. widthDbu is the wire width from
     // "ROUTED/NEW" (in DBU)
     void recordStripeFromSegment(const std::string& netName,
-                                 const std::string& layerName, int x0, int y0,
-                                 int x1, int y1, int widthDbu);
+                                 const std::string& layerName, int x0Dbu,
+                                 int y0Dbu, int x1Dbu, int y1Dbu, int widthDbu);
 
     // -----------------------------------------------------------------
     // DEF parsing: PDN stripes, vias, and bumps
@@ -253,7 +251,6 @@ class CoarsePdnBuilder3D {
                                bool&              currentNetIsPdn,
                                std::string&       currentLayerName,
                                int&               currentRouteWidthDbu);
-    // void handleViasLine(const std::string& line);
     void handleComponentsLine(const std::string& line,
                               std::string&       currentInstName,
                               std::string& currentMacroName, int& currentX,
@@ -268,12 +265,12 @@ class CoarsePdnBuilder3D {
                                int y0Dbu, int x1Dbu, int y1Dbu);
 
     void accumulateHorizontalStripe(ConductanceGrid2D&      grid,
-                                    const MetalLayerConfig& layer, double x0,
-                                    double y0, double x1, double y1);
+                                    const MetalLayerConfig& layer, int x0Dbu,
+                                    int y0Dbu, int x1Dbu, int y1Dbu);
 
     void accumulateVerticalStripe(ConductanceGrid2D&      grid,
-                                  const MetalLayerConfig& layer, double x0,
-                                  double y0, double x1, double y1);
+                                  const MetalLayerConfig& layer, int x0Dbu,
+                                  int y0Dbu, int x1Dbu, int y1Dbu);
 
     // -----------------------------------------------------------------
     // Via accumulation
@@ -346,10 +343,10 @@ class CoarsePdnBuilder3D {
 
     // DEF geometry
     double mDbuPerMicron = 1.0;
-    double mDieXMinUm    = 0.0;
-    double mDieYMinUm    = 0.0;
-    double mDieXMaxUm    = 0.0;
-    double mDieYMaxUm    = 0.0;
+    double mDieXMinDbu   = 0.0;
+    double mDieYMinDbu   = 0.0;
+    double mDieXMaxDbu   = 0.0;
+    double mDieYMaxDbu   = 0.0;
 
     // In-plane conductance grids: [netIndex][layerIndex]
     std::vector<std::vector<ConductanceGrid2D>> m2DGrids;

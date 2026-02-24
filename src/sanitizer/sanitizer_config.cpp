@@ -222,9 +222,8 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
                     metalLayerNames.insert(name);
                 }
 
-                requireNonNegativeNumber(m,
-                                         "resistivity_ohm_x_um",
-                                         context + ".resistivity_ohm_x_um");
+                requireNonNegativeNumber(
+                  m, "resistivity_ohm_x_um", context + ".resistivity_ohm_x_um");
                 requireNonNegativeNumber(
                   m, "thickness_um", context + ".thickness_um");
             }
@@ -250,8 +249,8 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
                   requireNonEmptyString(v, "name", context + ".name");
                 std::string bottom = requireNonEmptyString(
                   v, "bottom_layer", context + ".bottom_layer");
-                std::string top = requireNonEmptyString(
-                  v, "top_layer", context + ".top_layer");
+                std::string top =
+                  requireNonEmptyString(v, "top_layer", context + ".top_layer");
 
                 requireNonNegativeNumber(
                   v, "resistance_ohm", context + ".resistance_ohm");
@@ -298,8 +297,8 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
                   requireNonEmptyString(v, "name", context + ".name");
                 std::string bottom = requireNonEmptyString(
                   v, "bottom_layer", context + ".bottom_layer");
-                std::string top = requireNonEmptyString(
-                  v, "top_layer", context + ".top_layer");
+                std::string top =
+                  requireNonEmptyString(v, "top_layer", context + ".top_layer");
 
                 requireNonNegativeNumber(
                   v, "resistance_ohm", context + ".resistance_ohm");
@@ -380,98 +379,54 @@ bool integrityCheck(const Json& configJ, const std::string& filePath) {
             }
         }
 
-        // ------------------- layer_order ------------------------------------
-        // const Json* orderArr =
-        //   requireArray(*techJ, "layer_order", "tech.layer_order");
-        // if (orderArr) {
-        //     for (std::size_t i = 0; i < orderArr->size(); ++i) {
-        //         const Json& lv = (*orderArr)[i];
-        //         std::string context =
-        //           "tech.layer_order[" + std::to_string(i) + "]";
+        // -------------------------------------------------------------------------
+        // Simulation Section
+        // -------------------------------------------------------------------------
+        if (simJ) {
+            // Integers in JSON are also numbers, so requireNonNegativeNumber is
+            // OK
 
-        //         if (!lv.is_string()) {
-        //             PDN_ERROR("Element %zu of 'tech.layer_order' must be a "
-        //                       "string (config: %s)",
-        //                       i,
-        //                       filePath.c_str());
-        //             result = false;
-        //             continue;
-        //         }
-
-        //         std::string layer = lv.get<std::string>();
-        //         if (layer.empty()) {
-        //             PDN_ERROR("Element %zu of 'tech.layer_order' must not be "
-        //                       "empty (config: %s)",
-        //                       i,
-        //                       filePath.c_str());
-        //             result = false;
-        //             continue;
-        //         }
-
-        //         if (!metalLayerNames.empty() &&
-        //             metalLayerNames.find(layer) == metalLayerNames.end()) {
-        //             PDN_ERROR("Layer '%s' in 'tech.layer_order' is not "
-        //                       "defined in 'tech.metal_layers' (config: %s)",
-        //                       layer.c_str(),
-        //                       filePath.c_str());
-        //             result = false;
-        //         }
-        //     }
-        // }
-    }
-
-    // -------------------------------------------------------------------------
-    // Simulation Section
-    // -------------------------------------------------------------------------
-    if (simJ) {
-        // Integers in JSON are also numbers, so requireNonNegativeNumber is
-        // OK
-
-        // grid_Nx >= 0.0, warn if 0
-        // requireNonNegativeNumber(*simJ, "grid_Nx", "simulation.grid_Nx");
-
-        // grid_Ny >= 0.0, warn if 0
-        // requireNonNegativeNumber(*simJ, "grid_Ny", "simulation.grid_Ny");
-
-        // Enforce it to by within the defined metal layers
-        const char* key = "bump_layer";
-        if (!simJ->contains(key)) {
-            PDN_ERROR("Missing '%s' in %s (context: %s)",
-                      key,
-                      filePath.c_str(),
-                      "simulation.bump_layer");
-            result = false;
-        } else {
-            const Json& jv = simJ->at(key);
-            if (!jv.is_string()) {
-                PDN_ERROR("Field '%s' in %s must be a string (context: %s)",
+            // Enforce it to by within the defined metal layers
+            const char* key = "bump_layer";
+            if (!simJ->contains(key)) {
+                PDN_ERROR("Missing '%s' in %s (context: %s)",
                           key,
                           filePath.c_str(),
                           "simulation.bump_layer");
                 result = false;
             } else {
-                std::string bumpLayer = jv.get<std::string>();
-                if (bumpLayer.empty()) {
-                    PDN_ERROR("Field '%s' in %s must not be an empty string "
-                              "(context: %s)",
+                const Json& jv = simJ->at(key);
+                if (!jv.is_string()) {
+                    PDN_ERROR("Field '%s' in %s must be a string (context: %s)",
                               key,
                               filePath.c_str(),
                               "simulation.bump_layer");
                     result = false;
-                } else if (!metalLayerNames.empty() &&
-                           metalLayerNames.find(bumpLayer) ==
-                             metalLayerNames.end()) {
-                    PDN_ERROR(
-                      "'bump_layer' references unknown metal layer '%s' "
-                      "(config: %s)",
-                      bumpLayer.c_str(),
-                      filePath.c_str());
-                    result = false;
+                } else {
+                    std::string bumpLayer = jv.get<std::string>();
+                    if (bumpLayer.empty()) {
+                        PDN_ERROR(
+                          "Field '%s' in %s must not be an empty string "
+                          "(context: %s)",
+                          key,
+                          filePath.c_str(),
+                          "simulation.bump_layer");
+                        result = false;
+                    } else if (!metalLayerNames.empty() &&
+                               metalLayerNames.find(bumpLayer) ==
+                                 metalLayerNames.end()) {
+                        PDN_ERROR(
+                          "'bump_layer' references unknown metal layer '%s' "
+                          "(config: %s)",
+                          bumpLayer.c_str(),
+                          filePath.c_str());
+                        result = false;
+                    }
                 }
             }
         }
-    }
 #endif // NDEBUG
+    }
     return result;
 }
 } // namespace pdnsol

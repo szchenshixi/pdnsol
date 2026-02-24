@@ -1,15 +1,14 @@
 #include "pdnsol/io/parser_utils.hpp"
-#include "pdnsol/utils/fixed_point_number.hpp"
 
-#include <algorithm>
+#include "pdnsol/common.hpp"
+
 #include <cctype>
 
 namespace pdnsol {
 
 std::string ltrim(const std::string& s) {
     std::size_t pos = 0;
-    while (pos < s.size() &&
-           std::isspace(static_cast<unsigned char>(s[pos]))) {
+    while (pos < s.size() && std::isspace(static_cast<unsigned char>(s[pos]))) {
         ++pos;
     }
     return s.substr(pos);

@@ -1,5 +1,7 @@
 #include "pdnsol/solver/solver_basic.hpp"
 
+#include "pdnsol/utils/logging.hpp"
+
 namespace pdnsol {
 
 MNASolution solveMNA(const MNASystem& sys) {
@@ -10,12 +12,12 @@ MNASolution solveMNA(const MNASystem& sys) {
     solver.analyzePattern(A);
     solver.factorize(A);
     if (solver.info() != Eigen::Success) {
-        throw std::runtime_error("MNA matrix factorization failed; system may "
-                                 "be singular or ill-conditioned.");
+        PDN_FATAL("MNA matrix factorization failed; system may "
+                  "be singular or ill-conditioned.");
     }
     Eigen::VectorXd x = solver.solve(b);
     if (solver.info() != Eigen::Success) {
-        throw std::runtime_error(
+        PDN_FATAL(
           "MNA solve failed; system may be singular or ill-conditioned.");
     }
 

@@ -36,7 +36,7 @@ BraceWrapping:
   SplitEmptyRecord:      false
   SplitEmptyFunction:    false
 BreakConstructorInitializersBeforeComma: true
-ColumnLimit:     79
+ColumnLimit:     80
 # Pattern ignored by clang-format
 CommentPragmas:    ''
 ContinuationIndentWidth: 2

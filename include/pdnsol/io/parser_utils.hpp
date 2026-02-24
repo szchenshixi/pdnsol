@@ -2,8 +2,8 @@
 
 #include <string>
 #include <vector>
+#include <algorithm>
 
-#include "pdnsol/common.hpp"
 #include "pdnsol/utils/id_string.hpp"
 
 // Shared parsing utilities for SPICE and SPEF
